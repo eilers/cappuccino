@@ -94,7 +94,7 @@ var CPURLConnectionDelegate = nil;
     @param anError not used
     @return the data at the URL or \c nil if there was an error
 */
-+ (CPData)sendSynchronousRequest:(CPURLRequest)aRequest returningResponse:({CPURLResponse})aURLResponse
++ (CPData)sendSynchronousRequest:(CPURLRequest)aRequest returningResponse:(/*{*/CPURLResponse/*}*/)aURLResponse
 {
     try
     {
@@ -110,6 +110,9 @@ var CPURLConnectionDelegate = nil;
             request.setRequestHeader(key, [fields objectForKey:key]);
 
         request.send([aRequest HTTPBody]);
+
+        if (!request.success())
+            return nil;
 
         return [CPData dataWithRawString:request.responseText()];
     }
@@ -250,6 +253,7 @@ var CPURLConnectionDelegate = nil;
                 {
                     var response = [[CPHTTPURLResponse alloc] initWithURL:URL];
                     [response _setStatusCode:statusCode];
+                    [response _setAllResponseHeaders:_HTTPRequest.getAllResponseHeaders()];
                     [_delegate connection:self didReceiveResponse:response];
                 }
             }
@@ -276,7 +280,7 @@ var CPURLConnectionDelegate = nil;
 
 @implementation CPURLConnection (Deprecated)
 
-+ (CPData)sendSynchronousRequest:(CPURLRequest)aRequest returningResponse:({CPURLResponse})aURLResponse error:(id)anError
++ (CPData)sendSynchronousRequest:(CPURLRequest)aRequest returningResponse:(/*{*/CPURLResponse/*}*/)aURLResponse error:(id)anError
 {
     _CPReportLenientDeprecation(self, _cmd, @selector(sendSynchronousRequest:returningResponse:));
 

@@ -20,8 +20,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+@import "CPPanel.j"
 @import "CPTableView.j"
+@import "CPText.j"
 @import "_CPPopUpListDataSource.j"
+
+@class CPScrollView
+@class CPApp
+
+@global CPLineBorder
 
 
 /*!
@@ -582,7 +589,7 @@ var ListColumnIdentifier = @"1";
         case CPCarriageReturnCharacter:
             if ([self isVisible])
             {
-                [self closeListAfterItemClick];
+                [self closeListAfterItemClick];
                 return YES;
             }
             break;
@@ -839,12 +846,22 @@ var _CPPopUpListDataSourceKey   = @"_CPPopUpListDataSourceKey",
 */
 - (CPTableColumn)listColumn
 {
-    return _tableColumn;
+    return _tableColumns[0];
 }
 
 @end
 
 @implementation _CPPopUpPanel : CPPanel
+
+- (id)initWithContentRect:(CGRect)aContentRect styleMask:(unsigned int)aStyleMask
+{
+    if (self = [super initWithContentRect:aContentRect styleMask:aStyleMask])
+        _constrainsToUsableScreen = NO;
+
+	[self _trapNextMouseDown];
+
+    return self;
+}
 
 - (void)sendEvent:(CPEvent)anEvent
 {
@@ -854,6 +871,30 @@ var _CPPopUpListDataSourceKey   = @"_CPPopUpListDataSourceKey",
         [[self delegate] setListWasClicked:YES];
 
     return [super sendEvent:anEvent];
+}
+
+- (void)orderFront:(id)sender
+{
+	[self _trapNextMouseDown];
+	[super orderFront:sender];
+}
+
+- (void)_mouseWasClicked:(CPEvent)anEvent
+{
+	var mouseWindow = [anEvent window],
+		rect = [[[self delegate] dataSource] bounds],
+		point = [[[self delegate] dataSource] convertPoint:[anEvent locationInWindow] fromView:nil];
+
+	if (mouseWindow != self && !CGRectContainsPoint(rect, point))
+		[[self delegate] close];
+	else if ([mouseWindow firstResponder] == [[self delegate] dataSource])
+		[self _trapNextMouseDown];
+}
+
+- (void)_trapNextMouseDown
+{
+    // Don't dequeue the event so clicks in controls will work
+    [CPApp setTarget:self selector:@selector(_mouseWasClicked:) forNextEventMatchingMask:CPLeftMouseDownMask untilDate:nil inMode:CPDefaultRunLoopMode dequeue:NO];
 }
 
 @end

@@ -24,13 +24,15 @@
 @import <Foundation/CPObject.j>
 @import <Foundation/CPString.j>
 
-@import "CPCib.j"
+@import "CPCibBindingConnector.j"
 @import "CPCibConnector.j"
 @import "CPCibControlConnector.j"
-@import "CPCibOutletConnector.j"
-@import "CPCibBindingConnector.j"
-@import "CPCibRuntimeAttributesConnector.j"
 @import "CPCibHelpConnector.j"
+@import "CPCibOutletConnector.j"
+@import "CPCibRuntimeAttributesConnector.j"
+@import "CPClipView.j"
+
+@class CPScrollView
 
 
 @implementation _CPCibObjectData : CPObject
@@ -258,31 +260,9 @@ var _CPCibObjectDataNamesKeysKey                = @"_CPCibObjectDataNamesKeysKey
 {
     _replacementObjects[[_fileOwner UID]] = anOwner;
 
-    var index = 0,
-        count = _connections.length,
-        runtimeAttributeConnectors = [],
-        connection = nil;
-
-    for (; index < count; ++index)
+    for (var i = 0, count = _connections.length; i < count; ++i)
     {
-        connection = _connections[index];
-
-        if ([connection isKindOfClass:CPCibRuntimeAttributesConnector])
-            // Defer runtime attribute connections until after all other connections are made
-            runtimeAttributeConnectors.push(connection);
-        else
-        {
-            [connection replaceObjects:_replacementObjects];
-            [connection establishConnection];
-        }
-    }
-
-    count = runtimeAttributeConnectors.length;
-
-    for (index = 0; index < count; ++index)
-    {
-        connection = runtimeAttributeConnectors[index];
-
+        var connection = _connections[i];
         [connection replaceObjects:_replacementObjects];
         [connection establishConnection];
     }

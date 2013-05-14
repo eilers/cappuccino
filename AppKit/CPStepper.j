@@ -20,9 +20,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-@import <AppKit/CPControl.j>
-@import <AppKit/CPButton.j>
-@import <AppKit/CPTextField.j>
+@import "CPControl.j"
+@import "CPButton.j"
+@import "CPTextField.j"
 
 
 
@@ -55,10 +55,14 @@
 */
 + (CPStepper)stepperWithInitialValue:(float)aValue minValue:(float)aMinValue maxValue:(float)aMaxValue
 {
-    var stepper = [[CPStepper alloc] initWithFrame:_CGRectMake(0, 0, 19, 25)];
+    var stepper = [[CPStepper alloc] initWithFrame:CGRectMakeZero()];
+
     [stepper setDoubleValue:aValue];
     [stepper setMinValue:aMinValue];
     [stepper setMaxValue:aMaxValue];
+
+    // _sizeToFit will put the good size for the stepper depending of the current theme
+    [stepper _sizeToFit];
 
     return stepper;
 }
@@ -76,15 +80,15 @@
     return [CPStepper stepperWithInitialValue:0.0 minValue:0.0 maxValue:59.0];
 }
 
-+ (Class)_binderClassForBinding:(CPString)theBinding
++ (Class)_binderClassForBinding:(CPString)aBinding
 {
-    if (theBinding == CPValueBinding || theBinding == CPMinValueBinding || theBinding == CPMaxValueBinding)
+    if (aBinding == CPValueBinding || aBinding == CPMinValueBinding || aBinding == CPMaxValueBinding)
         return [_CPStepperValueBinder class];
 
-    return [super _binderClassForBinding:theBinding];
+    return [super _binderClassForBinding:aBinding];
 }
 
-- (id)_replacementKeyPathForBinding:(CPString)aBinding
+- (CPString)_replacementKeyPathForBinding:(CPString)aBinding
 {
     if (aBinding == CPValueBinding)
         return @"doubleValue";
@@ -118,14 +122,14 @@
 
 - (void)_init
 {
-    _buttonUp = [[CPButton alloc] initWithFrame:_CGRectMakeZero()];
+    _buttonUp = [[CPButton alloc] initWithFrame:CGRectMakeZero()];
     [_buttonUp setContinuous:_autorepeat];
     [_buttonUp setTarget:self];
     [_buttonUp setAction:@selector(_buttonDidClick:)];
     [_buttonUp setAutoresizingMask:CPViewNotSizable];
     [self addSubview:_buttonUp];
 
-    _buttonDown = [[CPButton alloc] initWithFrame:_CGRectMakeZero()];
+    _buttonDown = [[CPButton alloc] initWithFrame:CGRectMakeZero()];
     [_buttonDown setContinuous:_autorepeat];
     [_buttonDown setTarget:self];
     [_buttonDown setAction:@selector(_buttonDidClick:)];
@@ -157,8 +161,8 @@
 {
     var upSize = [self valueForThemeAttribute:@"up-button-size"],
         downSize = [self valueForThemeAttribute:@"down-button-size"],
-        minSize = _CGSizeMake(upSize.width, upSize.height + downSize.height),
-        frame = _CGRectMakeCopy(aFrame);
+        minSize = CGSizeMake(upSize.width, upSize.height + downSize.height),
+        frame = CGRectMakeCopy(aFrame);
 
     frame.size.width = MAX(minSize.width, frame.size.width);
     frame.size.height = MAX(minSize.height, frame.size.height);
@@ -171,8 +175,9 @@
     var aFrame = [self frame],
         upSize = [self valueForThemeAttribute:@"up-button-size"],
         downSize = [self valueForThemeAttribute:@"down-button-size"],
-        upFrame = _CGRectMake(aFrame.size.width - upSize.width, 0, upSize.width, upSize.height),
-        downFrame = _CGRectMake(aFrame.size.width - downSize.width, upSize.height, downSize.width, downSize.height);
+        upFrame = CGRectMake(aFrame.size.width - upSize.width, 0, upSize.width, upSize.height),
+        downFrame = CGRectMake(aFrame.size.width - downSize.width, upSize.height, downSize.width, downSize.height);
+
     [_buttonUp setFrame:upFrame];
     [_buttonDown setFrame:downFrame];
 
@@ -182,6 +187,11 @@
     [_buttonDown setValue:[self valueForThemeAttribute:@"bezel-color-down-button" inState:CPThemeStateBordered] forThemeAttribute:@"bezel-color" inState:CPThemeStateBordered];
     [_buttonDown setValue:[self valueForThemeAttribute:@"bezel-color-down-button" inState:CPThemeStateBordered | CPThemeStateDisabled] forThemeAttribute:@"bezel-color" inState:CPThemeStateBordered | CPThemeStateDisabled];
     [_buttonDown setValue:[self valueForThemeAttribute:@"bezel-color-down-button" inState:CPThemeStateBordered | CPThemeStateHighlighted] forThemeAttribute:@"bezel-color" inState:CPThemeStateBordered | CPThemeStateHighlighted];
+}
+
+- (void)_sizeToFit
+{
+    [self setFrame:CGRectMake([self frameOrigin].x, [self frameOrigin].y, 0, 0)];
 }
 
 /*!
@@ -259,8 +269,12 @@
 
 + (id)themeAttributes
 {
-    return [CPDictionary dictionaryWithObjects:[[CPNull null], [CPNull null], _CGSizeMakeZero(), _CGSizeMakeZero()]
-                                       forKeys:[@"bezel-color-up-button", @"bezel-color-down-button", @"up-button-size", @"down-button-size"]];
+    return @{
+            @"bezel-color-up-button": [CPNull null],
+            @"bezel-color-down-button": [CPNull null],
+            @"up-button-size": CGSizeMakeZero(),
+            @"down-button-size": CGSizeMakeZero(),
+        };
 }
 
 @end

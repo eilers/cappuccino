@@ -20,11 +20,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+@import <AppKit/CPCibBindingConnector.j>
 @import <AppKit/CPCibConnector.j>
 @import <AppKit/CPCibControlConnector.j>
 @import <AppKit/CPCibOutletConnector.j>
 @import <AppKit/CPCibRuntimeAttributesConnector.j>
 @import <AppKit/CPCibHelpConnector.j>
+@import <AppKit/CPKeyValueBinding.j>
 
 NIB_CONNECTION_EQUIVALENCY_TABLE = {};
 
@@ -130,7 +132,7 @@ var NSTransformers = [CPSet setWithObjects:
         _binding = [aCoder decodeObjectForKey:@"NSBinding"];
         _keyPath = [aCoder decodeObjectForKey:@"NSKeyPath"];
 
-        _options = [CPDictionary dictionary];
+        _options = @{};
 
         var NSOptions = [aCoder decodeObjectForKey:@"NSOptions"],
             keyEnumerator = [NSOptions keyEnumerator],

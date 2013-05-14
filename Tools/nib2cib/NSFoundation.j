@@ -22,6 +22,8 @@
 
 @import "NSArray.j"
 @import "NSAttributedString.j"
+@import "NSByteCountFormatter.j"
+@import "NSDate.j"
 @import "NSDateFormatter.j"
 @import "NSDictionary.j"
 @import "NSExpression.j"

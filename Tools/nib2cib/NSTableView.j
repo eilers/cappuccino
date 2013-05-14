@@ -20,8 +20,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-
 @import <AppKit/CPTableView.j>
+
+@class Nib2Cib
+
 
 @implementation CPTableView (NSCoding)
 
@@ -40,7 +42,13 @@
 
         // Convert xib default to cib default
         if (_rowHeight == 17)
-            _rowHeight = 23;
+        {
+            var theme = [Nib2Cib defaultTheme],
+                height = [theme valueForAttributeWithName:@"default-row-height" forClass:CPTableView];
+
+            _rowHeight = height;
+        }
+
 
         _headerView = [aCoder decodeObjectForKey:@"NSHeaderView"];
 
@@ -55,6 +63,8 @@
 
         _tableColumns = [aCoder decodeObjectForKey:@"NSTableColumns"];
         [_tableColumns makeObjectsPerformSelector:@selector(setTableView:) withObject:self];
+
+        _archivedDataViews = [aCoder decodeObjectForKey:@"NSTableViewArchivedReusableViewsKey"];
 
         _intercellSpacing = CGSizeMake([aCoder decodeFloatForKey:@"NSIntercellSpacingWidth"],
                                        [aCoder decodeFloatForKey:@"NSIntercellSpacingHeight"]);
@@ -89,7 +99,15 @@
 
 - (id)initWithCoder:(CPCoder)aCoder
 {
-    return [self NS_initWithCoder:aCoder];
+    self = [self NS_initWithCoder:aCoder];
+
+    if (self)
+    {
+        var cell = [aCoder decodeObjectForKey:@"NSCell"];
+        [self NS_initWithCell:cell];
+    }
+
+    return self;
 }
 
 - (Class)classForKeyedArchiver

@@ -24,6 +24,7 @@
 @import <Foundation/CPDictionary.j>
 @import <Foundation/CPString.j>
 
+@import "CPCib.j"
 
 var CPCibOwner = @"CPCibOwner";
 
@@ -51,7 +52,7 @@ var CPCibOwner = @"CPCibOwner";
     var bundle = anOwner ? [CPBundle bundleForClass:[anOwner class]] : [CPBundle mainBundle],
         path = [bundle pathForResource:aName];
 
-    return [self loadCibFile:path externalNameTable:[CPDictionary dictionaryWithObject:anOwner forKey:CPCibOwner]];
+    return [self loadCibFile:path externalNameTable:@{ CPCibOwner: anOwner }];
 }
 
 - (CPCib)loadCibFile:(CPString)aFileName externalNameTable:(CPDictionary)aNameTable
@@ -77,7 +78,7 @@ var CPCibOwner = @"CPCibOwner";
     var bundle = anOwner ? [CPBundle bundleForClass:[anOwner class]] : [CPBundle mainBundle],
         path = [bundle pathForResource:aName];
 
-    return [self loadCibFile:path externalNameTable:[CPDictionary dictionaryWithObject:anOwner forKey:CPCibOwner] loadDelegate:aDelegate];
+    return [self loadCibFile:path externalNameTable:@{ CPCibOwner: anOwner } loadDelegate:aDelegate];
 }
 
 - (CPCib)loadCibFile:(CPString)aFileName externalNameTable:(CPDictionary)aNameTable loadDelegate:(id)aDelegate

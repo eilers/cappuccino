@@ -10,3 +10,7 @@ WebSite
 xcuserdata/
 !*.xcodeproj/project.pbxproj
 *.xCodeSupport/
+*.XcodeSupport/
+*XcodeSupport/
+*.sublime-project
+*.sublime-workspace

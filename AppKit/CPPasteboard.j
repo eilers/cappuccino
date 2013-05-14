@@ -22,6 +22,7 @@
 
 @import <Foundation/CPObject.j>
 @import <Foundation/CPArray.j>
+@import <Foundation/CPData.j>
 @import <Foundation/CPDictionary.j>
 @import <Foundation/CPPropertyListSerialization.j>
 
@@ -78,7 +79,7 @@ var CPPasteboards = nil,
 
     [self setVersion:1.0];
 
-    CPPasteboards = [CPDictionary dictionary];
+    CPPasteboards = @{};
 
     if (typeof window.cpPasteboardWithName !== "undefined")
         supportsNativePasteboard = YES;
@@ -117,11 +118,11 @@ var CPPasteboards = nil,
 
     if (self)
     {
-        _name = aName;
+//        _name = aName;
         _types = [];
 
-        _owners = [CPDictionary dictionary];
-        _provided = [CPDictionary dictionary];
+        _owners = @{};
+        _provided = @{};
 
         _changeCount = 0;
 
@@ -187,8 +188,8 @@ var CPPasteboards = nil,
 {
     [_types setArray:types];
 
-    _owners = [CPDictionary dictionary];
-    _provided = [CPDictionary dictionary];
+    _owners = @{};
+    _provided = @{};
 
     var count = _types.length;
 
@@ -247,14 +248,14 @@ var CPPasteboards = nil,
 
 // Determining Types
 /*!
-    Checks the pasteboard's types for a match with the types listen in the specified array. The array should
+    Checks the pasteboard's types for a match with the types listed in the specified array. The array should
     be ordered by the requestor's most preferred data type first.
     @param anArray an array of requested types ordered by preference
     @return the highest match with the pasteboard's supported types or \c nil if no match was found
 */
 - (CPString)availableTypeFromArray:(CPArray)anArray
 {
-    return [[self types] firstObjectCommonWithArray:anArray];
+    return [anArray firstObjectCommonWithArray:[self types]];
 }
 
 /*!

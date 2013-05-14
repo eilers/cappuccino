@@ -20,6 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+@import "CPText.j"
 @import "CPTextField.j"
 @import "_CPPopUpList.j"
 
@@ -59,15 +60,18 @@ var CPComboBoxTextSubview = @"text",
 
 + (id)themeAttributes
 {
-    return [CPDictionary dictionaryWithObjectsAndKeys:_CGSizeMake(21.0, 29.0), @"popup-button-size", _CGInsetMake(3.0, 3.0, 3.0, 3.0), @"border-inset"];
+    return @{
+                @"popup-button-size": CGSizeMake(21.0, 29.0),
+                @"border-inset": CGInsetMake(3.0, 3.0, 3.0, 3.0),
+            };
 }
 
-+ (Class)_binderClassForBinding:(CPString)theBinding
++ (Class)_binderClassForBinding:(CPString)aBinding
 {
-    if (theBinding === CPContentBinding || theBinding === CPContentValuesBinding)
+    if (aBinding === CPContentBinding || aBinding === CPContentValuesBinding)
         return [_CPComboBoxContentBinder class];
 
-    return [super _binderClassForBinding:theBinding];
+    return [super _binderClassForBinding:aBinding];
 }
 
 - (id)initWithFrame:(CGRect)aFrame
@@ -83,7 +87,7 @@ var CPComboBoxTextSubview = @"text",
 - (void)_initComboBox
 {
     _items = [CPArray array];
-    _listClass = [_CPPopUpList class];
+//    _listClass = [_CPPopUpList class];
     _usesDataSource = NO;
     _completes = NO;
     _canComplete = NO;
@@ -850,7 +854,7 @@ var CPComboBoxTextSubview = @"text",
 {
     if (aName === "popup-button-view")
     {
-        var view = [[_CPComboBoxPopUpButton alloc] initWithFrame:_CGRectMakeZero() comboBox:self];
+        var view = [[_CPComboBoxPopUpButton alloc] initWithFrame:CGRectMakeZero() comboBox:self];
 
         return view;
     }
@@ -1110,7 +1114,7 @@ var CPComboBoxCompletionTest = function(object, index, context)
 */
 @implementation _CPComboBoxContentBinder : CPBinder
 
-- (void)setValueFor:(CPString)theBinding
+- (void)setValueFor:(CPString)aBinding
 {
     var destination = [_info objectForKey:CPObservedObjectKey],
         keyPath = [_info objectForKey:CPObservedKeyPathKey],
@@ -1152,13 +1156,15 @@ var CPComboBoxCompletionTest = function(object, index, context)
     else
         newValue = [self transformValue:newValue withOptions:options];
 
-    switch (theBinding)
+    switch (aBinding)
     {
-        case CPContentBinding:          [_source setContent:newValue];
-                                        break;
+        case CPContentBinding:
+            [_source setContent:newValue];
+            break;
 
-        case CPContentValuesBinding:    [_source setContentValues:newValue];
-                                        break;
+        case CPContentValuesBinding:
+            [_source setContentValues:newValue];
+            break;
     }
 }
 

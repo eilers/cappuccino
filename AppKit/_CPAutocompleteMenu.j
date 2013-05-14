@@ -23,7 +23,11 @@
 @import <Foundation/CPObject.j>
 
 @import "CPTextField.j"
+@import "CPTableView.j"
 @import "_CPMenuWindow.j"
+
+@class CPScrollView
+
 
 // TODO Make themable.
 var _CPAutocompleteMenuMaximumHeight = 307;
@@ -50,12 +54,12 @@ var _CPAutocompleteMenuMaximumHeight = 307;
     {
         textField = aTextField;
 
-        _menuWindow = [[CPWindow alloc] initWithContentRect:CGRectMake(0, 0, 100, 100) styleMask:CPBorderlessWindowMask];
+        _menuWindow = [[_CPAutocompleteWindow alloc] initWithContentRect:CGRectMake(0, 0, 100, 100) styleMask:CPBorderlessWindowMask];
 
         [_menuWindow setLevel:CPPopUpMenuWindowLevel];
         [_menuWindow setHasShadow:YES];
         [_menuWindow setShadowStyle:CPMenuWindowShadowStyle];
-        [_menuWindow setAcceptsMouseMovedEvents:NO];
+        [_menuWindow setAcceptsMouseMovedEvents:YES];
         [_menuWindow setBackgroundColor:[_CPMenuWindow backgroundColorForBackgroundStyle:_CPMenuWindowPopUpBackgroundStyle]];
 
         var contentView = [_menuWindow contentView];
@@ -65,7 +69,7 @@ var _CPAutocompleteMenuMaximumHeight = 307;
         [scrollView setHasHorizontalScroller:NO];
         [contentView addSubview:scrollView];
 
-        tableView = [[_CPNonFirstResponderTableView alloc] initWithFrame:CPRectMakeZero()];
+        tableView = [[_CPNonFirstResponderTableView alloc] initWithFrame:CGRectMakeZero()];
 
         var tableColumn = [CPTableColumn new];
         [tableColumn setResizingMask:CPTableColumnAutoresizingMask];
@@ -79,9 +83,8 @@ var _CPAutocompleteMenuMaximumHeight = 307;
         [tableView setHeaderView:nil];
         [tableView setCornerView:nil];
         [tableView setRowHeight:24.0];
-        [tableView setGridStyleMask:CPTableViewSolidHorizontalGridLineMask];
+        [tableView setGridStyleMask:CPTableViewGridNone];
         [tableView setBackgroundColor:[CPColor clearColor]];
-        [tableView setGridColor:[CPColor colorWithRed:242.0 / 255.0 green:243.0 / 255.0 blue:245.0 / 255.0 alpha:1.0]];
 
         [scrollView setDocumentView:tableView];
     }
@@ -111,8 +114,13 @@ var _CPAutocompleteMenuMaximumHeight = 307;
 
 - (void)setIndexOfSelectedItem:(int)anIndex
 {
-    [tableView selectRowIndexes:[CPIndexSet indexSetWithIndex:anIndex] byExtendingSelection:NO];
-    [tableView scrollRowToVisible:anIndex];
+    if (anIndex == CPNotFound)
+        [tableView selectRowIndexes:[CPIndexSet indexSet] byExtendingSelection:NO];
+    else
+    {
+        [tableView selectRowIndexes:[CPIndexSet indexSetWithIndex:anIndex] byExtendingSelection:NO];
+        [tableView scrollRowToVisible:anIndex];
+    }
 }
 
 - (int)indexOfSelectedItem
@@ -153,9 +161,9 @@ var _CPAutocompleteMenuMaximumHeight = 307;
 
         var dataView = [tableColumn dataView],
             fontNormal = [dataView valueForThemeAttribute:@"font" inState:CPThemeStateTableDataView],
-            fontSelected = [dataView valueForThemeAttribute:@"font" inState:CPThemeStateTableDataView | CPThemeStateSelectedTableDataView],
+            fontSelected = [dataView valueForThemeAttribute:@"font" inState:CPThemeStateTableDataView | CPThemeStateSelectedDataView],
             contentInsetNormal = [dataView valueForThemeAttribute:@"content-inset" inState:CPThemeStateTableDataView],
-            contentInsetSelected = [dataView valueForThemeAttribute:@"content-inset" inState:CPThemeStateTableDataView | CPThemeStateSelectedTableDataView];
+            contentInsetSelected = [dataView valueForThemeAttribute:@"content-inset" inState:CPThemeStateTableDataView | CPThemeStateSelectedDataView];
 
         var mergedString = contentArray.join("\n");
 
@@ -194,7 +202,7 @@ var _CPAutocompleteMenuMaximumHeight = 307;
     [self setIndexOfSelectedItem:indexOfSelectedItem];
 
     [textField setThemeState:CPThemeStateAutocompleting];
-    [_menuWindow orderFront:self];
+    [[textField window] addChildWindow:_menuWindow ordered:CPWindowAbove];
 
     [self layoutSubviews];
 }
@@ -260,8 +268,35 @@ var _CPAutocompleteMenuMaximumHeight = 307;
 
 @end
 
+@implementation _CPAutocompleteWindow : CPPanel
+
+- (id)initWithContentRect:(CGRect)aContentRect styleMask:(unsigned int)aStyleMask
+{
+    if (self = [super initWithContentRect:aContentRect styleMask:aStyleMask])
+        _constrainsToUsableScreen = NO;
+
+    return self;
+}
+
+- (BOOL)becomesKeyOnlyIfNeeded
+{
+    return YES;
+}
+
+- (BOOL)worksWhenModal
+{
+    // Windows which serve as auxiliary controls should work when modal.
+    return YES;
+}
+
+@end
 
 @implementation _CPNonFirstResponderTableView : CPTableView
+
+- (BOOL)needsPanelToBecomeKey
+{
+    return NO;
+}
 
 - (BOOL)acceptsFirstResponder
 {

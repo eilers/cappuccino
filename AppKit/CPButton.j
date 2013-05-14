@@ -25,7 +25,8 @@
 
 @import "CPControl.j"
 @import "CPStringDrawing.j"
-
+@import "CPText.j"
+@import "CPWindow_Constants.j"
 
 /* @group CPBezelStyle */
 
@@ -59,11 +60,11 @@ CPMomentaryPushInButton = 7;
 CPMomentaryPushButton   = 0;
 CPMomentaryLight        = 7;
 
-CPNoButtonMask              = 0;
-CPContentsButtonMask        = 1;
-CPPushInButtonMask          = 2;
-CPGrayButtonMask            = 4;
-CPBackgroundButtonMask      = 8;
+CPNoButtonMask          = 0;
+CPContentsButtonMask    = 1;
+CPPushInButtonMask      = 2;
+CPGrayButtonMask        = 4;
+CPBackgroundButtonMask  = 8;
 
 CPNoCellMask                = CPNoButtonMask;
 CPContentsCellMask          = CPContentsButtonMask;
@@ -71,16 +72,19 @@ CPPushInCellMask            = CPPushInButtonMask;
 CPChangeGrayCellMask        = CPGrayButtonMask;
 CPChangeBackgroundCellMask  = CPBackgroundButtonMask;
 
-CPButtonStateMixed                  = CPThemeState("mixed");
-CPButtonStateBezelStyleRounded      = CPThemeState("rounded");
+CPButtonStateMixed             = CPThemeState("mixed");
+CPButtonStateBezelStyleRounded = CPThemeState("rounded");
 
 // add all future correspondance between bezel styles and theme state here.
-var CPButtonBezelStyleStateMap = [CPDictionary dictionaryWithObjects:[CPButtonStateBezelStyleRounded, nil]
-                                                             forKeys:[CPRoundedBezelStyle, CPRoundRectBezelStyle]];
+var CPButtonBezelStyleStateMap = @{
+        CPRoundedBezelStyle: CPButtonStateBezelStyleRounded,
+        CPRoundRectBezelStyle: [CPNull null],
+    };
 
-
-CPButtonDefaultHeight = 24.0;
+/// @cond IGNORE
+CPButtonDefaultHeight = 25.0;
 CPButtonImageOffset   = 3.0;
+/// @endcond
 
 /*!
     @ingroup appkit
@@ -116,6 +120,14 @@ CPButtonImageOffset   = 3.0;
     BOOL                _isTracking;
 }
 
++ (Class)_binderClassForBinding:(CPString)aBinding
+{
+    if (aBinding === CPTargetBinding || [aBinding hasPrefix:CPArgumentBinding])
+        return [CPActionBinding class];
+
+    return [super _binderClassForBinding:aBinding];
+}
+
 + (id)buttonWithTitle:(CPString)aTitle
 {
     return [self buttonWithTitle:aTitle theme:[CPTheme defaultTheme]];
@@ -139,8 +151,13 @@ CPButtonImageOffset   = 3.0;
 
 + (id)themeAttributes
 {
-    return [CPDictionary dictionaryWithObjects:[[CPNull null], 0.0, _CGInsetMakeZero(), _CGInsetMakeZero(), [CPNull null]]
-                                       forKeys:[@"image", @"image-offset", @"bezel-inset", @"content-inset", @"bezel-color"]];
+    return @{
+            @"image": [CPNull null],
+            @"image-offset": 0.0,
+            @"bezel-inset": CGInsetMakeZero(),
+            @"content-inset": CGInsetMakeZero(),
+            @"bezel-color": [CPNull null],
+        };
 }
 
 /*!
@@ -221,7 +238,7 @@ CPButtonImageOffset   = 3.0;
     else if (![anObjectValue isKindOfClass:[CPNumber class]])
         anObjectValue = CPOnState;
     else if (anObjectValue >= CPOnState)
-        anObjectValue = CPOnState
+        anObjectValue = CPOnState;
     else if (anObjectValue < CPOffState)
         if ([self allowsMixedState])
             anObjectValue = CPMixedState;
@@ -522,6 +539,7 @@ CPButtonImageOffset   = 3.0;
     _isTracking = YES;
 
     var startedTracking = [super startTrackingAt:aPoint];
+
     if (_highlightsBy & (CPPushInCellMask | CPChangeGrayCellMask))
     {
         if (_showsStateBy & (CPChangeGrayCellMask | CPChangeBackgroundCellMask))
@@ -536,6 +554,7 @@ CPButtonImageOffset   = 3.0;
         else
             [self highlight:NO];
     }
+
     return startedTracking;
 }
 
@@ -577,7 +596,7 @@ CPButtonImageOffset   = 3.0;
 {
     var contentInset = [self currentValueForThemeAttribute:@"content-inset"];
 
-    return _CGRectInsetByInset(bounds, contentInset);
+    return CGRectInsetByInset(bounds, contentInset);
 }
 
 - (CGRect)bezelRectForBounds:(CGRect)bounds
@@ -588,7 +607,7 @@ CPButtonImageOffset   = 3.0;
 
     var bezelInset = [self currentValueForThemeAttribute:@"bezel-inset"];
 
-    return _CGRectInsetByInset(bounds, bezelInset);
+    return CGRectInsetByInset(bounds, bezelInset);
 }
 
 - (CGSize)_minimumFrameSize
@@ -648,14 +667,14 @@ CPButtonImageOffset   = 3.0;
 {
     if (aName === "bezel-view")
     {
-        var view = [[CPView alloc] initWithFrame:_CGRectMakeZero()];
+        var view = [[CPView alloc] initWithFrame:CGRectMakeZero()];
 
         [view setHitTests:NO];
 
         return view;
     }
     else
-        return [[_CPImageAndTextView alloc] initWithFrame:_CGRectMakeZero()];
+        return [[_CPImageAndTextView alloc] initWithFrame:CGRectMakeZero()];
 }
 
 - (void)layoutSubviews
@@ -988,6 +1007,3 @@ var CPButtonImageKey                    = @"CPButtonImageKey",
 }
 
 @end
-
-@import "CPCheckBox.j"
-@import "CPRadio.j"

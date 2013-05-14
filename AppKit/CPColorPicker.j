@@ -24,6 +24,12 @@
 
 @import "CPView.j"
 
+@class CPSlider
+
+@global CPColorPickerViewWidth
+@global CPColorPickerViewHeight
+@global CPWheelColorPickerMode
+
 
 /*!
     @ingroup appkit
@@ -109,12 +115,12 @@
 
 - (id)initView
 {
-    var aFrame = _CGRectMake(0, 0, CPColorPickerViewWidth, CPColorPickerViewHeight);
+    var aFrame = CGRectMake(0, 0, CPColorPickerViewWidth, CPColorPickerViewHeight);
 
     _pickerView = [[CPView alloc] initWithFrame:aFrame];
     [_pickerView setAutoresizingMask:CPViewWidthSizable | CPViewHeightSizable];
 
-    _brightnessSlider = [[CPSlider alloc] initWithFrame:_CGRectMake(0, (aFrame.size.height - 34), aFrame.size.width, 15)];
+    _brightnessSlider = [[CPSlider alloc] initWithFrame:CGRectMake(0, (aFrame.size.height - 34), aFrame.size.width, 15)];
 
     [_brightnessSlider setValue:15.0 forThemeAttribute:@"track-width"];
     [_brightnessSlider setValue:[CPColor colorWithPatternImage:[[CPImage alloc] initWithContentsOfFile:[[CPBundle bundleForClass:[CPColorPicker class]] pathForResource:@"brightness_bar.png"]]] forThemeAttribute:@"track-color"];
@@ -127,7 +133,7 @@
     [_brightnessSlider setAction:@selector(brightnessSliderDidChange:)];
     [_brightnessSlider setAutoresizingMask:CPViewWidthSizable | CPViewMinYMargin];
 
-    _hueSaturationView = [[__CPColorWheel alloc] initWithFrame:_CGRectMake(0, 0, aFrame.size.width, aFrame.size.height - 38)];
+    _hueSaturationView = [[__CPColorWheel alloc] initWithFrame:CGRectMake(0, 0, aFrame.size.width, aFrame.size.height - 38)];
     [_hueSaturationView setDelegate:self];
     [_hueSaturationView setAutoresizingMask:(CPViewWidthSizable | CPViewHeightSizable)];
 
@@ -152,12 +158,12 @@
         brightness = [_brightnessSlider floatValue];
 
     [_hueSaturationView setWheelBrightness:brightness / 100.0];
-    [_brightnessSlider setBackgroundColor:[CPColor colorWithHue:hue saturation:saturation brightness:100]];
+    [_brightnessSlider setBackgroundColor:[CPColor colorWithHue:hue / 360.0 saturation:saturation / 100.0 brightness:1]];
 
     var colorPanel = [self colorPanel],
         opacity = [colorPanel opacity];
 
-    _cachedColor = [CPColor colorWithHue:hue saturation:saturation brightness:brightness alpha:opacity];
+    _cachedColor = [CPColor colorWithHue:hue / 360.0 saturation:saturation / 100.0 brightness:brightness / 100.0 alpha:opacity];
 
     [[self colorPanel] setColor:_cachedColor];
 }
@@ -188,10 +194,10 @@
     var hsb = [newColor hsbComponents];
 
     [_hueSaturationView setPositionToColor:newColor];
-    [_brightnessSlider setFloatValue:hsb[2]];
-    [_hueSaturationView setWheelBrightness:hsb[2] / 100.0];
+    [_brightnessSlider setFloatValue:hsb[2] * 100.0];
+    [_hueSaturationView setWheelBrightness:hsb[2]];
 
-    [_brightnessSlider setBackgroundColor:[CPColor colorWithHue:hsb[0] saturation:hsb[1] brightness:100]];
+    [_brightnessSlider setBackgroundColor:[CPColor colorWithHue:hsb[0] saturation:hsb[1] brightness:1]];
 }
 
 - (CPImage)provideNewButtonImage
@@ -222,7 +228,7 @@
     float       _radius;
 }
 
-- (id)initWithFrame:(CPRect)aFrame
+- (id)initWithFrame:(CGRect)aFrame
 {
     if (self = [super initWithFrame:aFrame])
     {
@@ -269,13 +275,13 @@
 #endif
 }
 
-- (void)setFrameSize:(CPSize)aSize
+- (void)setFrameSize:(CGSize)aSize
 {
     [super setFrameSize:aSize];
     [self setWheelSize:aSize];
 }
 
-- (void)setWheelSize:(CPSize)aSize
+- (void)setWheelSize:(CGSize)aSize
 {
     var min = MIN(aSize.width, aSize.height);
 
@@ -353,15 +359,15 @@
     _angle     = [self radiansToDegrees:angle];
     _distance  = (distance / _radius) * 100.0;
 
-    [_crosshair setFrameOrigin:CPPointMake(COS(angle) * distance + midX - 2.0, SIN(angle) * distance + midY - 2.0)];
+    [_crosshair setFrameOrigin:CGPointMake(COS(angle) * distance + midX - 2.0, SIN(angle) * distance + midY - 2.0)];
 }
 
 - (void)setPositionToColor:(CPColor)aColor
 {
     var hsb    = [aColor hsbComponents],
         bounds = [self bounds],
-        angle    = [self degreesToRadians:hsb[0]],
-        distance = (hsb[1] / 100.0) * _radius;
+        angle    = [self degreesToRadians:hsb[0] * 360.0],
+        distance = hsb[1] * _radius;
 
     [self setAngle:angle distance:distance];
 }

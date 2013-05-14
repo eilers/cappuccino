@@ -120,6 +120,29 @@ var concat = Array.prototype.concat,
     return self[anIndex];
 }
 
+- (CPArray)objectsAtIndexes:(CPIndexSet)indexes
+{
+    if ([indexes lastIndex] >= self.length)
+        [CPException raise:CPRangeException reason:_cmd + " indexes out of bounds"];
+
+    var ranges = indexes._ranges,
+        count  = ranges.length,
+        result = [],
+             i = 0;
+
+    for (; i < count; i++)
+    {
+        var range = ranges[i],
+            loc = range.location,
+            len = range.length,
+            subArray = self.slice(loc, loc + len);
+
+        result.splice.apply(result, [result.length, 0].concat(subArray));
+    }
+
+    return result;
+}
+
 - (CPUInteger)indexOfObject:(id)anObject inRange:(CPRange)aRange
 {
     // Only use isEqual: if our object is a CPObject.
@@ -221,6 +244,26 @@ var concat = Array.prototype.concat,
         _CPRaiseRangeException(self, _cmd, anIndex, self.length);
 
     splice.call(self, anIndex, 1);
+}
+
+- (void)removeObjectIdenticalTo:(id)anObject
+{
+    if (indexOf)
+    {
+        var anIndex;
+        while ((anIndex = indexOf.call(self, anObject)) !== -1)
+            splice.call(self, anIndex, 1);
+    }
+    else
+        [super removeObjectIdenticalTo:anObject inRange:CPMakeRange(0, self.length)];
+}
+
+- (void)removeObjectIdenticalTo:(id)anObject inRange:(CPRange)aRange
+{
+    if (indexOf && !aRange)
+        [self removeObjectIdenticalTo:anObject];
+
+    [super removeObjectIdenticalTo:anObject inRange:aRange];
 }
 
 - (void)addObject:(id)anObject

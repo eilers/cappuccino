@@ -1,4 +1,5 @@
 
+@import <Foundation/CPArray.j>
 @import <AppKit/CPArrayController.j>
 @import <AppKit/CPTextField.j>
 
@@ -51,7 +52,7 @@
 
 - (void)testSetContent
 {
-    otherContent = [@"5", @"6"];
+    var otherContent = [@"5", @"6"];
     [[self arrayController] setContent:otherContent];
 
     // This has not been decided on yet. See Issue #795.
@@ -183,7 +184,46 @@
     [self assert:[CPNumber numberWithInt:2] equals:[_arrayController arrangedObjects][1]];
 }
 
+- (void)testAdd
+{
+    _contentArray = [];
+    _arrayController = [[CPArrayController alloc] initWithContent:_contentArray];
+    [self _testAdd];
+}
 
+- (void)_testAdd
+{
+    [_arrayController setObjectClass:[Employee class]];
+    [self assert:[[_arrayController contentArray] count] equals:0];
+    [_arrayController add:nil];
+    [self assert:[[_arrayController contentArray] count] equals:1];
+    [self assert:[[_arrayController arrangedObjects][0] class] equals:[Employee class]];
+
+    // switch it up so that we can tell where this one is.
+    [_arrayController setObjectClass:[Department class]];
+    [_arrayController add:nil];
+    [self assert:[[[_arrayController arrangedObjects] lastObject] class] equals:[Department class]];
+}
+
+- (void)testInsert
+{
+    _contentArray = [];
+    _arrayController = [[CPArrayController alloc] initWithContent:_contentArray];
+    [self _testInsert];
+}
+
+- (void)_testInsert
+{
+    [_arrayController setObjectClass:[Employee class]];
+    [_arrayController add:nil];
+    [_arrayController add:nil];
+    [_arrayController add:nil];
+
+    [_arrayController setObjectClass:[Department class]];
+    [_arrayController setSelectionIndex:1];
+    [_arrayController insert:nil];
+    [self assert:[[[_arrayController arrangedObjects] objectAtIndex:1] class] equals:[Department class]];
+}
 
 - (void)_initTestRemoveObjects_SimpleArray
 {
@@ -428,7 +468,7 @@
 {
     [self _initTestRemoveObjects_SimpleArray];
     [self _testRemoveObjects_MultipleSelectedObjects_AvoidingEmptySelection];
-}/
+}
 
 - (void)testRemoveObjects_MultipleSelectedObjects_AvoidingEmptySelection_ContentBinding
 {
@@ -1000,7 +1040,7 @@
     var arrayController1 = [CPArrayController new],
         arrayController2 = [CPArrayController new];
 
-    [arrayController2 setContent:[CPDictionary dictionaryWithObject:[1, 2, 3] forKey:@"x"]];
+    [arrayController2 setContent:@{ @"x": [1, 2, 3] }];
 
     [arrayController1 bind:@"contentArray" toObject:arrayController2 withKeyPath:@"selection.x" options:nil];
     // This used to cause a bug where the _CPKVCArray wrapping the selection proxy tried to call 'count' on
@@ -1125,8 +1165,14 @@
     if (self)
     {
         items = [CPMutableArray array];
-        [items addObject:[CPDictionary dictionaryWithObjectsAndKeys:@"Spacely Sprockets", @"name", [CPArray arrayWithObjects:@"Tom", @"Dick", @"Harry"], @"employees"]];
-        [items addObject:[CPDictionary dictionaryWithObjectsAndKeys:@"Cogswell Cogs", @"name", [CPArray arrayWithObjects:@"Jane", @"Mary", @"Vic"], @"employees"]];
+        [items addObject:@{
+                @"name": @"Spacely Sprockets",
+                @"employees": [CPArray arrayWithObjects:@"Tom", @"Dick", @"Harry"]
+            }];
+        [items addObject:@{
+                @"name": @"Cogswell Cogs",
+                @"employees": [CPArray arrayWithObjects:@"Jane", @"Mary", @"Vic"]
+            }];
     }
 
     return self;

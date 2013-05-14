@@ -30,6 +30,10 @@
 @import "NSCell.j"
 @import "NSControl.j"
 
+@class Nib2Cib
+
+@global NIB_CONNECTION_EQUIVALENCY_TABLE
+
 
 var NSButtonIsBorderedMask = 0x00800000,
     NSButtonAllowsMixedStateMask = 0x1000000,
@@ -62,23 +66,17 @@ var NSButtonIsBorderedMask = 0x00800000,
 
 - (id)NS_initWithCoder:(CPCoder)aCoder
 {
-    self = [super NS_initWithCoder:aCoder];
-
-    if (self)
-    {
-        var cell = [aCoder decodeObjectForKey:@"NSCell"];
-        self = [self NS_initWithCell:cell];
-    }
-
-    return self;
+    return [super NS_initWithCoder:aCoder];
 }
 
 /*!
     Intialise a button given a cell. This method is meant for reuse by controls which contain
     cells other than CPButton itself.
 */
-- (id)NS_initWithCell:(NSCell)cell
+- (void)NS_initWithCell:(NSCell)cell
 {
+    [super NS_initWithCell:cell];
+
     var alternateImage = [cell alternateImage],
         positionOffsetSizeWidth = 0,
         positionOffsetOriginX = 0,
@@ -126,8 +124,8 @@ var NSButtonIsBorderedMask = 0x00800000,
         // implemented:
         case CPRoundedBezelStyle:  // Push IB style
             positionOffsetOriginY = 6;
-            positionOffsetOriginX = 4;
-            positionOffsetSizeWidth = -12;
+            positionOffsetOriginX = 6;
+            positionOffsetSizeWidth = -12
             fixedHeight = YES;
             break;
 
@@ -209,7 +207,7 @@ var NSButtonIsBorderedMask = 0x00800000,
             fixedHeight = YES;
     }
 
-    if ([cell isBordered])
+    if ([cell isBordered] || [self isKindOfClass:[CPRadio class]] || [self isKindOfClass:[CPCheckBox class]])
     {
         /*
             Try to figure out the intention of the theme in regards to fixed height buttons.
@@ -219,7 +217,7 @@ var NSButtonIsBorderedMask = 0x00800000,
             - If there is just a max height, use that for only for fixed height buttons.
             - If there is no max height either, don't do any height adjustments.
         */
-        var theme = [[Converter sharedConverter] themes][0],
+        var theme = [Nib2Cib defaultTheme],
             minSize = [theme valueForAttributeWithName:@"min-size" forClass:[self class]],
             maxSize = [theme valueForAttributeWithName:@"max-size" forClass:[self class]],
             adjustHeight = NO;
@@ -248,11 +246,14 @@ var NSButtonIsBorderedMask = 0x00800000,
                 CPLog.debug("NSButton [%s]: adjusted height from %d to %d", _title == null ? "<no title>" : '"' + _title + '"', oldHeight, _frame.size.height);
         }
 
-        // Reposition the buttons according to its particular offsets
-        _frame.origin.x += positionOffsetOriginX;
-        _frame.origin.y += positionOffsetOriginY;
-        _frame.size.width += positionOffsetSizeWidth;
-        _bounds.size.width += positionOffsetSizeWidth;
+        if ([cell isBordered])
+        {
+            // Reposition the buttons according to its particular offsets
+            _frame.origin.x += positionOffsetOriginX;
+            _frame.origin.y += positionOffsetOriginY;
+            _frame.size.width += positionOffsetSizeWidth;
+            _bounds.size.width += positionOffsetSizeWidth;
+        }
     }
 
     _keyEquivalent = [cell keyEquivalent];
@@ -268,8 +269,6 @@ var NSButtonIsBorderedMask = 0x00800000,
 
     _highlightsBy = [cell highlightsBy];
     _showsStateBy = [cell showsStateBy];
-
-    return self;
 }
 
 @end
@@ -278,7 +277,15 @@ var NSButtonIsBorderedMask = 0x00800000,
 
 - (id)initWithCoder:(CPCoder)aCoder
 {
-    return [self NS_initWithCoder:aCoder];
+    self = [self NS_initWithCoder:aCoder];
+
+    if (self)
+    {
+        var cell = [aCoder decodeObjectForKey:@"NSCell"];
+        [self NS_initWithCell:cell];
+    }
+
+    return self;
 }
 
 - (Class)classForKeyedArchiver

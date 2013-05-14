@@ -11,7 +11,7 @@
 
 @implementation AppController : CPObject
 {
-    CPWindow    theWindow; //this "outlet" is connected automatically by the Cib
+    @outlet CPWindow    theWindow; //this "outlet" is connected automatically by the Cib
 
     @outlet CPTextField locationField;
     @outlet CPTextField lengthField;
@@ -22,18 +22,18 @@
 
 - (void)applicationDidFinishLaunching:(CPNotification)aNotification
 {
-    // This is called when the application is done loading.
-}
-
-- (void)awakeFromCib
-{
     rows = [CPArray new];
 
     var path = [[CPBundle mainBundle] pathForResource:@"rows.plist"],
         request = [CPURLRequest requestWithURL:path],
         connection = [CPURLConnection connectionWithRequest:request delegate:self];
 
-    [theWindow setFullBridge:YES];
+    [theWindow setFullPlatformWindow:YES];
+}
+
+- (void)awakeFromCib
+{
+    console.log(_cmd);
 }
 
 - (void)connection:(CPURLConnection)connection didReceiveData:(CPString)dataString

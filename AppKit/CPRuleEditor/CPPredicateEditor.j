@@ -82,15 +82,15 @@
 }
 
 /*! @cond */
-+ (Class)_binderClassForBinding:(CPString)theBinding
++ (Class)_binderClassForBinding:(CPString)aBinding
 {
-    if (theBinding == CPValueBinding)
+    if (aBinding == CPValueBinding)
         return [CPPredicateEditorValueBinder class];
 
-    return [super _binderClassForBinding:theBinding];
+    return [super _binderClassForBinding:aBinding];
 }
 
-- (id)_replacementKeyPathForBinding:(CPString)aBinding
+- (CPString)_replacementKeyPathForBinding:(CPString)aBinding
 {
     if (aBinding == CPValueBinding)
         return @"predicate";
@@ -220,7 +220,7 @@
         var children = [CPArray array],
             itemsCount = 0,
             menuIndex = -1,
-            itemsArray,
+            itemArray,
 
             templateView = [templateViews objectAtIndex:count],
             isPopup = [templateView isKindOfClass:[CPPopUpButton class]];
@@ -360,7 +360,11 @@
         rootItems = [treeChild children];
     }
 
-    var row = [CPDictionary dictionaryWithObjectsAndKeys:criteria, @"criteria", values, @"displayValues", rowType, @"rowType"];
+    var row = @{
+            @"criteria": criteria,
+            @"displayValues": values,
+            @"rowType": rowType,
+        };
 
     return row;
 }
