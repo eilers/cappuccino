@@ -455,12 +455,12 @@ var HORIZONTAL_MARGIN = 2;
     [self tileIfNeeded:NO];
 }
 
-- (void)resizeSubviewsWithOldSize:(CPSize)oldBoundsSize
+- (void)resizeSubviewsWithOldSize:(CGSize)oldBoundsSize
 {
     // Desactivate subviews autoresizing
 }
 
-- (void)resizeWithOldSuperviewSize:(CPSize)oldBoundsSize
+- (void)resizeWithOldSuperviewSize:(CGSize)oldBoundsSize
 {
     if (_lockResizing)
         return;
@@ -783,6 +783,10 @@ var HORIZONTAL_MARGIN = 2;
             {
                 var firstSelectedIndex = [[self selectionIndexes] firstIndex],
                     newSelectedRange = nil;
+
+                // This catches the case where the shift key is held down for the first selection.
+                if (firstSelectedIndex === CPNotFound)
+                    firstSelectedIndex = index;
 
                 if (index < firstSelectedIndex)
                     newSelectedRange = CPMakeRange(index, (firstSelectedIndex - index) + 1);
