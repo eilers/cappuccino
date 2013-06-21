@@ -1,5 +1,6 @@
 @import <Foundation/Foundation.j>
 
+@import <OJUnit/OJTestCase.j>
 
 @implementation CPArrayTest : OJTestCase
 {
@@ -616,11 +617,11 @@
     [self assert:input1[1] equals:[output valueForKey:"1"] message:@"output[0]"];
     [self assert:input1[2] equals:[output valueForKey:"2"] message:@"output[0]"];
 
-    stoppingFunction = function(anObject, idx, stop)
+    var stoppingFunction = function(anObject, idx, stop)
     {
         [output setValue:anObject forKey:"" + idx];
         if ([output count] > 1)
-            stop(YES); // AT_DEREF(stop, YES) - FIXME Replace with proper @ref @deref when in ObjJ.
+            @deref(stop) = YES;
     }
     output = [CPMutableDictionary dictionary];
 
@@ -635,12 +636,9 @@
     var array = [CGRectMake(1, 2, 3, 4), CGPointMake(5, 6)],
         d = [array description];
 
-    [self assertTrue:d.indexOf("x: 1") !== -1 message:"Can't find 'x: 1' in description of array " + d];
-    [self assertTrue:d.indexOf("y: 2") !== -1 message:"Can't find 'y: 2' in description of array " + d];
-    [self assertTrue:d.indexOf("width: 3") !== -1 message:"Can't find 'width: 3' in description of array " + d];
-    [self assertTrue:d.indexOf("height: 4") !== -1 message:"Can't find 'height: 4' in description of array " + d];
-    [self assertTrue:d.indexOf("x: 5") !== -1 message:"Can't find 'x: 5' in description of array " + d];
-    [self assertTrue:d.indexOf("y: 6") !== -1 message:"Can't find 'y: 6' in description of array " + d];
+    [self assertTrue:d.indexOf("(1, 2)") !== -1 message:"Can't find '(1, 2)' in description of array " + d];
+    [self assertTrue:d.indexOf("(3, 4)") !== -1 message:"Can't find '(3, 4)' in description of array " + d];
+    [self assertTrue:d.indexOf("(5, 6)") !== -1 message:"Can't find '(5, 6)' in description of array " + d];
 }
 
 - (void)testSortUsingDescriptorsWithDifferentSelectors
@@ -679,6 +677,13 @@
 
     [self assertThrows:function() { [anArray addObserver:self forKeyPath:@"self" options:0 context:nil]; }];
     [self assertThrows:function() { [anArray removeObserver:self forKeyPath:@"self"]; }];
+}
+
+- (void)testArrayLiteral
+{
+  var anArray = @[1, [CPNull null], @"3"];
+
+  [self assert:[1, [CPNull null], "3"] equals:anArray];
 }
 
 @end

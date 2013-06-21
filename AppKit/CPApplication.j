@@ -23,14 +23,18 @@
 @import <Foundation/CPBundle.j>
 
 @import "CPCompatibility.j"
+@import "CPColorPanel.j"
+@import "CPCursor.j"
+@import "CPDocumentController.j"
 @import "CPEvent.j"
 @import "CPMenu.j"
 @import "CPResponder.j"
-@import "CPDocumentController.j"
 @import "CPThemeBlend.j"
 @import "CPCibLoading.j"
+@import "CPPanel.j"
 @import "CPPlatform.j"
-
+@import "CPWindowController.j"
+@import "_CPPopoverWindow.j"
 
 var CPMainCibFile               = @"CPMainCibFile",
     CPMainCibFileHumanFriendly  = @"Main cib file base name",
@@ -82,8 +86,10 @@ CPRunContinuesResponse  = -1002;
 @implementation CPApplication : CPResponder
 {
     CPArray                 _eventListeners;
+    int                     _eventListenerInsertionIndex;
 
     CPEvent                 _currentEvent;
+    CPWindow                _lastMouseMoveWindow;
 
     CPArray                 _windows;
     CPWindow                _keyWindow;
@@ -138,10 +144,9 @@ CPRunContinuesResponse  = -1002;
     if (self)
     {
         _eventListeners = [];
+        _eventListenerInsertionIndex = 0;
 
-        _windows = [];
-
-        [_windows addObject:nil];
+        _windows = [[CPNull null]];
     }
 
     return self;
@@ -250,8 +255,13 @@ CPRunContinuesResponse  = -1002;
         _documentController = [CPDocumentController sharedDocumentController];
 
     var needsUntitled = !!_documentController,
-        URLStrings = window.cpOpeningURLStrings && window.cpOpeningURLStrings(),
-        index = 0,
+        URLStrings = nil;
+
+#if PLATFORM(DOM)
+    URLStrings = window.cpOpeningURLStrings && window.cpOpeningURLStrings();
+#endif
+
+    var index = 0,
         count = [URLStrings count];
 
     for (; index < count; ++index)
@@ -362,22 +372,32 @@ CPRunContinuesResponse  = -1002;
             applicationVersion = [options objectForKey:@"ApplicationVersion"] || [mainInfo objectForKey:@"CPBundleShortVersionString"],
             copyright = [options objectForKey:@"Copyright"] || [mainInfo objectForKey:@"CPHumanReadableCopyright"];
 
-        var aboutPanelPath = [[CPBundle bundleForClass:[CPWindowController class]] pathForResource:@"AboutPanel.cib"],
-            aboutPanelController = [CPWindowController alloc],
-            aboutPanelController = [aboutPanelController initWithWindowCibPath:aboutPanelPath owner:aboutPanelController],
-            aboutPanel = [aboutPanelController window],
-            contentView = [aboutPanel contentView],
-            imageView = [contentView viewWithTag:1],
-            applicationLabel = [contentView viewWithTag:2],
-            versionLabel = [contentView viewWithTag:3],
-            copyrightLabel = [contentView viewWithTag:4],
-            standardPath = [[CPBundle bundleForClass:[self class]] pathForResource:@"standardApplicationIcon.png"];
+        var windowWidth = 275,
+            windowHeight = 223,
+            imgWidth = 100,
+            imgHeight = 100,
+            interField = 8,
+            aboutPanel = [[CPWindow alloc] initWithContentRect:CGRectMake(0, 0, windowWidth, windowHeight) styleMask:CPClosableWindowMask],
+            imageView = [[CPImageView alloc] initWithFrame:CGRectMake((windowWidth / 2) - (imgWidth / 2), interField, imgWidth, imgHeight)],
+            applicationLabel = [[CPTextField alloc] initWithFrame:CGRectMake(17, imgHeight + 16, windowWidth - 34, 24)],
+            versionLabel = [[CPTextField alloc] initWithFrame:CGRectMake(17, imgHeight + 48, windowWidth - 34, 16)],
+            copyrightLabel = [[CPTextField alloc] initWithFrame:CGRectMake(17, imgHeight + 72, windowWidth - 34, 32)],
+            contentView = [aboutPanel contentView];
 
-        // FIXME move this into the CIB eventually
         [applicationLabel setFont:[CPFont boldSystemFontOfSize:[CPFont systemFontSize] + 2]];
         [applicationLabel setAlignment:CPCenterTextAlignment];
+        [versionLabel setFont:[CPFont systemFontOfSize:[CPFont systemFontSize] - 1]];
         [versionLabel setAlignment:CPCenterTextAlignment];
+        [copyrightLabel setFont:[CPFont systemFontOfSize:[CPFont systemFontSize] - 1]];
         [copyrightLabel setAlignment:CPCenterTextAlignment];
+        [copyrightLabel setLineBreakMode:CPLineBreakByWordWrapping];
+
+        [contentView addSubview:imageView];
+        [contentView addSubview:applicationLabel];
+        [contentView addSubview:versionLabel];
+        [contentView addSubview:copyrightLabel];
+
+        var standardPath = [[CPBundle bundleForClass:[self class]] pathForResource:@"standardApplicationIcon.png"];
 
         [imageView setImage:applicationIcon || [[CPImage alloc] initWithContentsOfFile:standardPath
                                                                                   size:CGSizeMake(256, 256)]];
@@ -391,7 +411,7 @@ CPRunContinuesResponse  = -1002;
         else
             [versionLabel setStringValue:@""];
 
-        [copyrightLabel setStringValue:copyright || ""];
+        [copyrightLabel setStringValue:copyright || @""];
         [aboutPanel center];
 
         _aboutPanel = aboutPanel;
@@ -401,7 +421,7 @@ CPRunContinuesResponse  = -1002;
 }
 
 
-- (void)_documentController:(NSDocumentController *)docController didCloseAll:(BOOL)didCloseAll context:(Object)info
+- (void)_documentController:(CPDocumentController)docController didCloseAll:(BOOL)didCloseAll context:(Object)info
 {
     // callback method for terminate:
     if (didCloseAll)
@@ -500,6 +520,8 @@ CPRunContinuesResponse  = -1002;
         if (_eventListeners[count]._callback === _CPRunModalLoop)
         {
             _eventListeners.splice(count, 1);
+            if (count <= _eventListenerInsertionIndex)
+                _eventListenerInsertionIndex--;
 
             return;
         }
@@ -547,7 +569,7 @@ CPRunContinuesResponse  = -1002;
 
 //    [theWindow._bridge _obscureWindowsBelowModalWindow];
 
-    [CPApp setCallback:_CPRunModalLoop forNextEventMatchingMask:CPAnyEventMask untilDate:nil inMode:0 dequeue:NO];
+    [CPApp setCallback:_CPRunModalLoop forNextEventMatchingMask:CPAnyEventMask untilDate:nil inMode:0 dequeue:YES];
 }
 
 /*!
@@ -578,12 +600,14 @@ CPRunContinuesResponse  = -1002;
     _currentEvent = anEvent;
     CPEventModifierFlags = [anEvent modifierFlags];
 
+    var theWindow = [anEvent window];
+
 #if PLATFORM(DOM)
-    var willPropagate = [[[anEvent window] platformWindow] _willPropagateCurrentDOMEvent];
+    var willPropagate = [[theWindow platformWindow] _willPropagateCurrentDOMEvent];
 
     // temporarily pretend we won't propagate the event. we'll restore the saved value later
     // we do this outside the if so that changes user code might make in _handleKeyEquiv. are preserved
-    [[[anEvent window] platformWindow] _propagateCurrentDOMEvent:NO];
+    [[theWindow platformWindow] _propagateCurrentDOMEvent:NO];
 #endif
 
     // Check if this is a candidate for key equivalent...
@@ -595,7 +619,7 @@ CPRunContinuesResponse  = -1002;
 
         // Unconditionally propagate on these keys to solve browser copy paste bugs
         if ((characters == "c" || characters == "x" || characters == "v") && (modifierFlags & CPPlatformActionKeyMask))
-            [[[anEvent window] platformWindow] _propagateCurrentDOMEvent:YES];
+            [[theWindow platformWindow] _propagateCurrentDOMEvent:YES];
 #endif
 
         return;
@@ -603,18 +627,47 @@ CPRunContinuesResponse  = -1002;
 
 #if PLATFORM(DOM)
     // if we make it this far, then restore the original willPropagate value
-    [[[anEvent window] platformWindow] _propagateCurrentDOMEvent:willPropagate];
+    [[theWindow platformWindow] _propagateCurrentDOMEvent:willPropagate];
 #endif
 
-    if (_eventListeners.length)
+    if ([anEvent type] == CPMouseMoved)
     {
-        if (_eventListeners[_eventListeners.length - 1]._mask & (1 << [anEvent type]))
-            _eventListeners.pop()._callback(anEvent);
+        if (theWindow !== _lastMouseMoveWindow)
+            [_lastMouseMoveWindow _mouseExitedResizeRect];
 
-        return;
+        _lastMouseMoveWindow = theWindow;
     }
 
-    [[anEvent window] sendEvent:anEvent];
+    /*
+        Event listeners are processed from back to front so that newer event listeners normally take
+        precedence. If during the execution of a callback a new event listener is added, it should
+        be inserted after the current callback but before any higher priority callbacks. This makes
+        repeating event listeners (those that reinsert themselves) stable relative to each other.
+    */
+    for (var i = _eventListeners.length - 1; i >= 0; i--)
+    {
+        var listener = _eventListeners[i];
+
+        if (listener._mask & (1 << [anEvent type]))
+        {
+            _eventListeners.splice(i, 1);
+            // In case the callback wants to add more listeners.
+            _eventListenerInsertionIndex = i;
+            listener._callback(anEvent);
+
+            if (listener._dequeue)
+            {
+                // Don't process the event normally and don't send it to any other listener.
+                _eventListenerInsertionIndex = _eventListeners.length;
+                return;
+            }
+        }
+    }
+
+    _eventListenerInsertionIndex = _eventListeners.length;
+
+    if (theWindow)
+        [theWindow sendEvent:anEvent];
 }
 
 /*!
@@ -650,6 +703,10 @@ CPRunContinuesResponse  = -1002;
 */
 - (CPWindow)windowWithWindowNumber:(int)aWindowNumber
 {
+    // Never allow _windows[0] to be returned - it's an internal CPNull placeholder.
+    if (!aWindowNumber)
+        return nil;
+
     return _windows[aWindowNumber];
 }
 
@@ -658,7 +715,8 @@ CPRunContinuesResponse  = -1002;
 */
 - (CPArray)windows
 {
-    return _windows;
+    // Return all windows, but not the CPNull placeholder in _windows[0].
+    return [_windows subarrayWithRange:CPMakeRange(1, [_windows count] - 1)];
 }
 
 /*!
@@ -886,31 +944,44 @@ CPRunContinuesResponse  = -1002;
 
 /*!
     Fires a callback function when an event matching a given mask occurs.
-    @param aCallback - A js function to be fired.
-    @prarm aMask - An event mask for the next event.
-    @param anExpiration - The date for which this callback expires (not implemented).
+
+    If multiple callbacks are set which match the same event, later callbacks
+    take priority over earlier callbacks, unless a new callback is set while
+    an existing callback is being processed in which case it's given the same
+    priority as the currently processing callback.
+
+    @param aCallback A js function to be fired.
+    @prarm aMask An event mask for the next event.
+    @param anExpiration The date for which this callback expires (not implemented).
     @param inMode (not implemented).
-    @param shouldDequeue (not implemented).
+    @param shouldDequeue YES to remove the event from the queue after calling the callback,
+    NO to deliver it normally.
 */
 - (void)setCallback:(Function)aCallback forNextEventMatchingMask:(unsigned int)aMask untilDate:(CPDate)anExpiration inMode:(CPString)aMode dequeue:(BOOL)shouldDequeue
 {
-    _eventListeners.push(_CPEventListenerMake(aMask, aCallback));
+    _eventListeners.splice(_eventListenerInsertionIndex++, 0, _CPEventListenerMake(aMask, aCallback, shouldDequeue));
 }
 
 /*!
     Assigns a target and action for the next event matching a given event mask.
     The callback method called will be passed the CPEvent when it fires.
 
-    @param aTarget - The target object for the callback.
-    @param aSelector - The selector which should be called on the target object.
-    @param aMask - The mask for a given event which should trigger the callback.
-    @param anExpiration - The date for which the callback expires (not implemented).
+    If multiple callbacks are set which match the same event, later callbacks
+    take priority over earlier callbacks, unless a new callback is set while
+    an existing callback is being processed in which case it's given the same
+    priority as the currently processing callback.
+
+    @param aTarget The target object for the callback.
+    @param aSelector The selector which should be called on the target object.
+    @param aMask The mask for a given event which should trigger the callback.
+    @param anExpiration The date for which the callback expires (not implemented).
     @param aMode (not implemented).
-    @param shouldDequeue (not implemented).
+    @param shouldDequeue YES to remove the event from the queue after calling the callback,
+    NO to deliver it normally.
 */
 - (void)setTarget:(id)aTarget selector:(SEL)aSelector forNextEventMatchingMask:(unsigned int)aMask untilDate:(CPDate)anExpiration inMode:(CPString)aMode dequeue:(BOOL)shouldDequeue
 {
-    _eventListeners.push(_CPEventListenerMake(aMask, function (anEvent) { objj_msgSend(aTarget, aSelector, anEvent); }));
+    _eventListeners.splice(_eventListenerInsertionIndex++, 0, _CPEventListenerMake(aMask, function (anEvent) { objj_msgSend(aTarget, aSelector, anEvent); }, shouldDequeue));
 }
 
 /*!
@@ -928,10 +999,10 @@ CPRunContinuesResponse  = -1002;
     @param aSheet the window to display as a sheet
     @param aWindow the window that will hold the sheet as a child
     @param aModalDelegate
-    @param aDidEndSelector
-    @param aContextInfo
+    @param didEndSelector
+    @param contextInfo
 */
-- (void)beginSheet:(CPWindow)aSheet modalForWindow:(CPWindow)aWindow modalDelegate:(id)aModalDelegate didEndSelector:(SEL)aDidEndSelector contextInfo:(id)aContextInfo
+- (void)beginSheet:(CPWindow)aSheet modalForWindow:(CPWindow)aWindow modalDelegate:(id)aModalDelegate didEndSelector:(SEL)didEndSelector contextInfo:(id)contextInfo
 {
     if ([aWindow isSheet])
     {
@@ -939,16 +1010,8 @@ CPRunContinuesResponse  = -1002;
         return;
     }
 
-    [aSheet._windowView _enableSheet:YES];
-
-    // -dw- if a sheet is already visible, we skip this since it serves no purpose and causes
-    // orderOut: to be called on the sheet, which is not what we want.
-    if (![aWindow isVisible])
-    {
-        [aWindow orderFront:self];
-        [aSheet setPlatformWindow:[aWindow platformWindow]];
-    }
-    [aWindow _attachSheet:aSheet modalDelegate:aModalDelegate didEndSelector:aDidEndSelector contextInfo:aContextInfo];
+    [aSheet._windowView _enableSheet:YES inWindow:aWindow];
+    [aWindow _attachSheet:aSheet modalDelegate:aModalDelegate didEndSelector:didEndSelector contextInfo:contextInfo];
 }
 
 /*!
@@ -973,7 +1036,7 @@ CPRunContinuesResponse  = -1002;
         var aWindow = [_windows objectAtIndex:count],
             context = aWindow._sheetContext;
 
-        if (context != nil && context["sheet"] === sheet)
+        if (context && context["sheet"] === sheet)
         {
             context["returnCode"] = returnCode;
             [aWindow _endSheet];
@@ -1009,7 +1072,8 @@ CPRunContinuesResponse  = -1002;
 */
 - (CPArray)arguments
 {
-    if (_fullArgsString !== window.location.hash)
+    // FIXME This should probably not access the window object #if !PLATFORM(DOM), but the unit tests rely on it.
+    if (window && window.location && _fullArgsString !== window.location.hash)
         [self _reloadArguments];
 
     return _args;
@@ -1036,8 +1100,9 @@ CPRunContinuesResponse  = -1002;
     if (!args || args.length == 0)
     {
         _args = [];
-        window.location.hash = @"#";
-
+        // Don't use if PLATFORM(DOM) here - the unit test fakes window.location so we should play along.
+        if (window && window.location)
+            window.location.hash = @"#";
         return;
     }
 
@@ -1052,12 +1117,15 @@ CPRunContinuesResponse  = -1002;
 
     var hash = [toEncode componentsJoinedByString:@"/"];
 
-    window.location.hash = @"#" + hash;
+    // Don't use if PLATFORM(DOM) here - the unit test fakes window.location so we should play along.
+    if (window && window.location)
+        window.location.hash = @"#" + hash;
 }
 
 - (void)_reloadArguments
 {
-    _fullArgsString = window.location.hash;
+    // FIXME This should probably not access the window object #if !PLATFORM(DOM), but the unit tests rely on it.
+    _fullArgsString = (window && window.location) ? window.location.hash : "";
 
     if (_fullArgsString.length)
     {
@@ -1171,7 +1239,7 @@ CPRunContinuesResponse  = -1002;
 
 + (CPString)defaultThemeName
 {
-    return ([[CPBundle mainBundle] objectForInfoDictionaryKey:"CPDefaultTheme"] || @"Aristo");
+    return ([[CPBundle mainBundle] objectForInfoDictionaryKey:"CPDefaultTheme"] || @"Aristo2");
 }
 
 @end
@@ -1181,28 +1249,29 @@ var _CPModalSessionMake = function(aWindow, aStopCode)
     return { _window:aWindow, _state:CPRunContinuesResponse , _previous:nil };
 };
 
-var _CPEventListenerMake = function(anEventMask, aCallback)
+var _CPEventListenerMake = function(anEventMask, aCallback, shouldDequeue)
 {
-    return { _mask:anEventMask, _callback:aCallback };
+    return { _mask:anEventMask, _callback:aCallback, _dequeue:shouldDequeue };
 };
 
 // Make this a global for use in CPPlatformWindow+DOM.j.
 _CPRunModalLoop = function(anEvent)
 {
-    [CPApp setCallback:_CPRunModalLoop forNextEventMatchingMask:CPAnyEventMask untilDate:nil inMode:0 dequeue:NO];
+    [CPApp setCallback:_CPRunModalLoop forNextEventMatchingMask:CPAnyEventMask untilDate:nil inMode:0 dequeue:YES];
 
     var theWindow = [anEvent window],
         modalSession = CPApp._currentSession;
 
-    // The special case for popovers here is not clear. In Cocoa the popover window does not respond YES to worksWhenModal,
-    // yet it works when there is a modal window. Maybe it starts its own modal session, but interaction with the original
-    // modal window seems to continue working as well. Regardless of correctness, this solution beats popovers not working
-    // at all from sheets.
+    /*
+        The special case for popovers here is not clear. In Cocoa the popover window does not respond YES to worksWhenModal, yet it works when there is a modal window. Maybe it starts its own modal session, but interaction with the original modal window seems to continue working as well. Regardless of correctness, this solution beats popovers not working at all from sheets.
+    */
     if (theWindow == modalSession._window ||
         [theWindow worksWhenModal] ||
         [theWindow attachedSheet] == modalSession._window || // -dw- allow modal parent of sheet to be repositioned
-        ([theWindow isKindOfClass:_CPAttachedWindow] && [[theWindow targetView] window] === modalSession._window))
+        ([theWindow isKindOfClass:_CPPopoverWindow] && [[theWindow targetView] window] === modalSession._window))
+    {
         [theWindow sendEvent:anEvent];
+    }
 };
 
 /*!
@@ -1285,7 +1354,7 @@ var _CPAppBootstrapperActions = nil;
     var defaultThemeName = [CPApplication defaultThemeName],
         themeURL = nil;
 
-    if (defaultThemeName === @"Aristo")
+    if (defaultThemeName === @"Aristo" || defaultThemeName === @"Aristo2")
         themeURL = [[CPBundle bundleForClass:[CPApplication class]] pathForResource:defaultThemeName + @".blend"];
     else
         themeURL = [[CPBundle mainBundle] pathForResource:defaultThemeName + @".blend"];
@@ -1312,7 +1381,7 @@ var _CPAppBootstrapperActions = nil;
     if (mainCibFile)
     {
         [mainBundle loadCibFile:mainCibFile
-            externalNameTable:[CPDictionary dictionaryWithObject:CPApp forKey:CPCibOwner]
+            externalNameTable:@{ CPCibOwner: CPApp }
                  loadDelegate:self];
 
         return YES;
@@ -1330,26 +1399,25 @@ var _CPAppBootstrapperActions = nil;
     // FIXME: We should implement autoenabling.
     [mainMenu setAutoenablesItems:NO];
 
-    var bundle = [CPBundle bundleForClass:[CPApplication class]],
-        newMenuItem = [[CPMenuItem alloc] initWithTitle:@"New" action:@selector(newDocument:) keyEquivalent:@"n"];
+    var newMenuItem = [[CPMenuItem alloc] initWithTitle:@"New" action:@selector(newDocument:) keyEquivalent:@"n"];
 
-    [newMenuItem setImage:[[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPApplication/New.png"] size:CGSizeMake(16.0, 16.0)]];
-    [newMenuItem setAlternateImage:[[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPApplication/NewHighlighted.png"] size:CGSizeMake(16.0, 16.0)]];
+    [newMenuItem setImage:[[CPTheme defaultTheme] valueForAttributeWithName:@"menu-general-icon-new" forClass:_CPMenuView]];
+    [newMenuItem setAlternateImage:[[CPTheme defaultTheme] valueForAttributeWithName:@"menu-general-icon-new" inState:CPThemeStateHighlighted forClass:_CPMenuView]];
 
     [mainMenu addItem:newMenuItem];
 
     var openMenuItem = [[CPMenuItem alloc] initWithTitle:@"Open" action:@selector(openDocument:) keyEquivalent:@"o"];
 
-    [openMenuItem setImage:[[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPApplication/Open.png"] size:CGSizeMake(16.0, 16.0)]];
-    [openMenuItem setAlternateImage:[[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPApplication/OpenHighlighted.png"] size:CGSizeMake(16.0, 16.0)]];
+    [openMenuItem setImage:[[CPTheme defaultTheme] valueForAttributeWithName:@"menu-general-icon-open" forClass:_CPMenuView]];
+    [openMenuItem setAlternateImage:[[CPTheme defaultTheme] valueForAttributeWithName:@"menu-general-icon-open" inState:CPThemeStateHighlighted forClass:_CPMenuView]];
 
     [mainMenu addItem:openMenuItem];
 
     var saveMenu = [[CPMenu alloc] initWithTitle:@"Save"],
         saveMenuItem = [[CPMenuItem alloc] initWithTitle:@"Save" action:@selector(saveDocument:) keyEquivalent:nil];
 
-    [saveMenuItem setImage:[[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPApplication/Save.png"] size:CGSizeMake(16.0, 16.0)]];
-    [saveMenuItem setAlternateImage:[[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPApplication/SaveHighlighted.png"] size:CGSizeMake(16.0, 16.0)]];
+    [saveMenuItem setImage:[[CPTheme defaultTheme] valueForAttributeWithName:@"menu-general-icon-save" forClass:_CPMenuView]];
+    [saveMenuItem setAlternateImage:[[CPTheme defaultTheme] valueForAttributeWithName:@"menu-general-icon-save" inState:CPThemeStateHighlighted forClass:_CPMenuView]];
 
     [saveMenu addItem:[[CPMenuItem alloc] initWithTitle:@"Save" action:@selector(saveDocument:) keyEquivalent:@"s"]];
     [saveMenu addItem:[[CPMenuItem alloc] initWithTitle:@"Save As" action:@selector(saveDocumentAs:) keyEquivalent:nil]];

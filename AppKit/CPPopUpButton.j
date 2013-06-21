@@ -20,8 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-@import <Foundation/CPGeometry.j>
-
+@import "CGGeometry.j"
 @import "CPButton.j"
 @import "CPKeyValueBinding.j"
 @import "CPMenu.j"
@@ -668,10 +667,15 @@ CPPopUpButtonStatePullsDown = CPThemeState("pulls-down");
     if (![self isEnabled] || ![self numberOfItems])
         return;
 
+    var menu = [self menu];
+
+    // Don't reopen the menu based on the same click which caused it to close, e.g. a click on this button.
+    if (menu._lastCloseEvent === anEvent)
+        return;
+
     [self highlight:YES];
 
-    var menu = [self menu],
-        bounds = [self bounds],
+    var bounds = [self bounds],
         minimumWidth = CGRectGetWidth(bounds);
 
     // FIXME: setFont: should set the font on the menu.
@@ -680,7 +684,7 @@ CPPopUpButtonStatePullsDown = CPThemeState("pulls-down");
     if ([self pullsDown])
     {
         var positionedItem = nil,
-            location = CGPointMake(0.0, CGRectGetMaxY(bounds));
+            location = CGPointMake(0.0, CGRectGetMaxY(bounds) - 1);
     }
     else
     {

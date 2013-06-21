@@ -25,35 +25,42 @@
 
 @import "NSTextField.j"
 
+@class Nib2Cib
+
 
 @implementation CPComboBox (NSCoding)
 
 - (id)NS_initWithCoder:(CPCoder)aCoder
 {
-    self = [super NS_initWithCoder:aCoder];
+    return [super NS_initWithCoder:aCoder];
+}
 
-    if (self)
+- (void)NS_initWithCell:(NSCell)cell
+{
+    [super NS_initWithCell:cell];
+
+    _items = [cell itemList];
+    _usesDataSource = [cell usesDataSource];
+    _completes = [cell completes];
+    _numberOfVisibleItems = [cell visibleItemCount];
+    _hasVerticalScroller = [cell hasVerticalScroller];
+    [self setButtonBordered:[cell borderedButton]];
+    [self setEnabled:[cell isEnabled]];
+
+    // Make sure the height is clipped to the max given by the theme
+    var theme = [Nib2Cib defaultTheme],
+        maxSize = [theme valueForAttributeWithName:@"max-size" forClass:[CPComboBox class]],
+        size = [self frameSize],
+        widthOffset = -3;
+
+    // Adjust for differences between Cocoa and Cappuccino widget framing.
+    if ([theme name] == @"Aristo")
     {
-        var cell = [aCoder decodeObjectForKey:@"NSCell"];
-
-        _items = [cell itemList];
-        _usesDataSource = [cell usesDataSource];
-        _completes = [cell completes];
-        _numberOfVisibleItems = [cell visibleItemCount];
-        _hasVerticalScroller = [cell hasVerticalScroller];
-        [self setButtonBordered:[cell borderedButton]];
-
-        // Make sure the height is clipped to the max given by the theme
-        var maxSize = [[[Converter sharedConverter] themes][0] valueForAttributeWithName:@"max-size" forClass:[CPComboBox class]],
-            size = [self frameSize];
-
-        [self setFrameSize:CGSizeMake(size.width, MIN(size.height, maxSize.height))];
-
-        // Adjust for differences between Cocoa and Cappuccino widget framing.
         _frame.origin.x += 1;
+        widthOffset = -5;
     }
 
-    return self;
+    [self setFrameSize:CGSizeMake(size.width + widthOffset, MIN(size.height, maxSize.height))];
 }
 
 @end
@@ -62,7 +69,15 @@
 
 - (id)initWithCoder:(CPCoder)aCoder
 {
-    return [self NS_initWithCoder:aCoder];
+    self = [self NS_initWithCoder:aCoder];
+
+    if (self)
+    {
+        var cell = [aCoder decodeObjectForKey:@"NSCell"];
+        [self NS_initWithCell:cell];
+    }
+
+    return self;
 }
 
 - (Class)classForKeyedArchiver

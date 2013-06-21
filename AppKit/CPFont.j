@@ -37,12 +37,12 @@ CPFontCurrentSystemSize = -1;
 // For internal use only by this class and subclasses
 _CPFontSystemFacePlaceholder = "_CPFontSystemFacePlaceholder";
 
-var _CPFontCache                     = {},
-    _CPSystemFontCache               = {},
-    _CPFontSystemFontFace            = CPFontDefaultSystemFontFace,
-    _CPFontSystemFontSize            = 12,
-    _CPFontFallbackFaces             = CPFontDefaultSystemFontFace.split(", "),
-    _CPFontStripRegExp               = new RegExp("(^\\s*[\"']?|[\"']?\\s*$)", "g");
+var _CPFontCache          = {},
+    _CPSystemFontCache    = {},
+    _CPFontSystemFontFace = CPFontDefaultSystemFontFace,
+    _CPFontSystemFontSize = 12,
+    _CPFontFallbackFaces  = CPFontDefaultSystemFontFace.split(", "),
+    _CPFontStripRegExp    = new RegExp("(^\\s*[\"']?|[\"']?\\s*$)", "g");
 
 
 #define _CPRealFontSize(aSize)  (aSize <= 0 ? _CPFontSystemFontSize : aSize)
@@ -181,8 +181,10 @@ following:
     {
         case CPSmallControlSize:
             return _CPFontSystemFontSize - 1;
+
         case CPMiniControlSize:
             return _CPFontSystemFontSize - 2;
+
         case CPRegularControlSize:
         default:
             return _CPFontSystemFontSize;
@@ -206,7 +208,7 @@ following:
     var systemSize = String(_CPFontSystemFontSize),
         currentSize = String(CPFontCurrentSystemSize);
 
-    for (key in _CPSystemFontCache)
+    for (var key in _CPSystemFontCache)
     {
         if (_CPSystemFontCache.hasOwnProperty(key) &&
             (key.indexOf(systemSize) === 0 || key.indexOf(currentSize) === 0))
@@ -281,7 +283,7 @@ following:
            that dynamically tracks the current system font size.
     @return the requested system font
 */
-+ (CPFont)systemFontOfSize:(CPSize)aSize
++ (CPFont)systemFontOfSize:(CGSize)aSize
 {
     return _CPSystemFont(aSize === 0 ? _CPFontSystemFontSize : aSize, NO);
 }
@@ -293,7 +295,7 @@ following:
            that dynamically tracks the current system font size.
     @return the requested bold system font
 */
-+ (CPFont)boldSystemFontOfSize:(CPSize)aSize
++ (CPFont)boldSystemFontOfSize:(CGSize)aSize
 {
     return _CPSystemFont(aSize === 0 ? _CPFontSystemFontSize : aSize, YES);
 }

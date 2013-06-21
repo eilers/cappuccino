@@ -45,12 +45,12 @@ var _CPColorWellDidBecomeExclusiveNotification = @"_CPColorWellDidBecomeExclusiv
     CPColor _color;
 }
 
-+ (Class)_binderClassForBinding:(CPString)theBinding
++ (Class)_binderClassForBinding:(CPString)aBinding
 {
-    if (theBinding == CPValueBinding)
+    if (aBinding == CPValueBinding)
         return [CPColorWellValueBinder class];
 
-    return [super _binderClassForBinding:theBinding];
+    return [super _binderClassForBinding:aBinding];
 }
 
 + (CPString)defaultThemeClass
@@ -60,8 +60,13 @@ var _CPColorWellDidBecomeExclusiveNotification = @"_CPColorWellDidBecomeExclusiv
 
 + (id)themeAttributes
 {
-    return [CPDictionary dictionaryWithObjects:[_CGInsetMakeZero(), [CPNull null], _CGInsetMake(3.0, 3.0, 3.0, 3.0), _CGInsetMakeZero(), [CPNull null]]
-                                       forKeys:[@"bezel-inset", @"bezel-color", @"content-inset", @"content-border-inset", @"content-border-color"]];
+    return @{
+            @"bezel-inset": CGInsetMakeZero(),
+            @"bezel-color": [CPNull null],
+            @"content-inset": CGInsetMake(3.0, 3.0, 3.0, 3.0),
+            @"content-border-inset": CGInsetMakeZero(),
+            @"content-border-color": [CPNull null],
+        };
 }
 
 - (void)_reverseSetBinding
@@ -244,21 +249,21 @@ var _CPColorWellDidBecomeExclusiveNotification = @"_CPColorWellDidBecomeExclusiv
 {
     var contentInset = [self currentValueForThemeAttribute:@"content-inset"];
 
-    return _CGRectInsetByInset(bounds, contentInset);
+    return CGRectInsetByInset(bounds, contentInset);
 }
 
 - (CGRect)bezelRectForBounds:(CGRect)bounds
 {
     var bezelInset = [self currentValueForThemeAttribute:@"bezel-inset"];
 
-    return _CGRectInsetByInset(bounds, bezelInset);
+    return CGRectInsetByInset(bounds, bezelInset);
 }
 
 - (CGRect)contentBorderRectForBounds:(CGRect)bounds
 {
     var contentBorderInset = [self currentValueForThemeAttribute:@"content-border-inset"];
 
-    return _CGRectInsetByInset(bounds, contentBorderInset);
+    return CGRectInsetByInset(bounds, contentBorderInset);
 }
 
 - (CGRect)rectForEphemeralSubviewNamed:(CPString)aName
@@ -278,7 +283,7 @@ var _CPColorWellDidBecomeExclusiveNotification = @"_CPColorWellDidBecomeExclusiv
 
 - (CPView)createEphemeralSubviewNamed:(CPString)aName
 {
-    var view = [[CPView alloc] initWithFrame:_CGRectMakeZero()];
+    var view = [[CPView alloc] initWithFrame:CGRectMakeZero()];
 
     [view setHitTests:NO];
 
@@ -315,7 +320,7 @@ var _CPColorWellDidBecomeExclusiveNotification = @"_CPColorWellDidBecomeExclusiv
 
 - (void)_updatePlaceholdersWithOptions:(CPDictionary)options
 {
-    var placeholderColor = [CPColor blueColor];
+    var placeholderColor = [CPColor blackColor];
 
     [self _setPlaceholder:placeholderColor forMarker:CPMultipleValuesMarker isDefault:YES];
     [self _setPlaceholder:placeholderColor forMarker:CPNoSelectionMarker isDefault:YES];
@@ -323,30 +328,19 @@ var _CPColorWellDidBecomeExclusiveNotification = @"_CPColorWellDidBecomeExclusiv
     [self _setPlaceholder:placeholderColor forMarker:CPNullMarker isDefault:YES];
 }
 
-- (void)setValueFor:(CPString)theBinding
+- (id)valueForBinding:(CPString)aBinding
 {
-    var destination = [_info objectForKey:CPObservedObjectKey],
-        keyPath = [_info objectForKey:CPObservedKeyPathKey],
-        options = [_info objectForKey:CPOptionsKey],
-        newValue = [destination valueForKeyPath:keyPath],
-        isPlaceholder = CPIsControllerMarker(newValue);
+    return [_source color];
+}
 
-    if (isPlaceholder)
-    {
-        if (newValue === CPNotApplicableMarker && [options objectForKey:CPRaisesForNotApplicableKeysBindingOption])
-        {
-           [CPException raise:CPGenericException
-                       reason:@"can't transform non applicable key on: " + _source + " value: " + newValue];
-        }
+- (void)setValue:(id)aValue forBinding:(CPString)theBinding
+{
+    [_source setColor:aValue];
+}
 
-        newValue = [self _placeholderForMarker:newValue];
-    }
-    else
-    {
-        newValue = [self transformValue:newValue withOptions:options];
-    }
-
-    [_source setColor:newValue];
+- (void)setPlaceholderValue:(id)aValue withMarker:(CPString)aMarker forBinding:(CPString)aBinding
+{
+    [_source setColor:aValue];
 }
 
 @end

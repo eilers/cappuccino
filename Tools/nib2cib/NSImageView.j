@@ -22,34 +22,40 @@
 
 @import <AppKit/CPImageView.j>
 
+@import "NSCell.j"
+
 
 @implementation CPImageView (NSCoding)
 
 - (id)NS_initWithCoder:(CPCoder)aCoder
 {
-    self = [super NS_initWithCoder:aCoder];
+    return [super NS_initWithCoder:aCoder];
+}
 
-    if (self)
-    {
-        var cell = [aCoder decodeObjectForKey:@"NSCell"];
+- (void)NS_initWithCell:(NSCell)cell
+{
+    [super NS_initWithCell:cell];
 
-        [self setImageScaling:[cell imageScaling]];
-        [self setImageAlignment:[cell imageAlignment]];
-        _isEditable = [cell isEditable];
-    }
-
-    return self;
+    [self setImageScaling:[cell imageScaling]];
+    [self setImageAlignment:[cell imageAlignment]];
+    _isEditable = [cell isEditable];
 }
 
 @end
 
 @implementation NSImageView : CPImageView
-{
-}
 
 - (id)initWithCoder:(CPCoder)aCoder
 {
-    return [super NS_initWithCoder:aCoder];
+    self = [self NS_initWithCoder:aCoder];
+
+    if (self)
+    {
+        var cell = [aCoder decodeObjectForKey:@"NSCell"];
+        [self NS_initWithCell:cell];
+    }
+
+    return self;
 }
 
 - (Class)classForKeyedArchiver

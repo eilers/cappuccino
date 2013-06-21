@@ -1,5 +1,7 @@
 @import <Foundation/CPDictionary.j>
 
+@import <OJUnit/OJTestCase.j>
+
 @implementation CPDictionaryTest : OJTestCase
 {
     CPDictionary    string_dict;
@@ -198,13 +200,14 @@
     [self assertFalse:[dict containsKey:"4"]];
 }
 
+// FIXME: When CPDictionary will throw exception on nil value the following test case can be turn on again
+/*
 - (void)testThrowsOnNilValue
 {
     [self assertThrows:function(){
         var dict = [[CPDictionary alloc] initWithObjects:[1, nil] forKeys:["1", "2"]];
-        [self assertFalse:dict];
     }];
-}
+}*/
 
 - (void)testKeysOfEntriesPassingTest
 {
@@ -350,7 +353,7 @@
 
 - (void)testEnumerateKeysAndObjectsUsingBlock_
 {
-    var input0 = [CPDictionary dictionary],
+    var input0 = @{},
         input1 = [CPDictionary dictionaryWithJSObject:{a: 1, b: 3, c: "b"}],
         output = [CPMutableDictionary dictionary],
         outputFunction = function(aKey, anObject)
@@ -367,11 +370,11 @@
 
     // Stop enumerating after two keys.
     output = [CPMutableDictionary dictionary];
-    stoppingFunction = function(aKey, anObject, stop)
+    var stoppingFunction = function(aKey, anObject, stop)
     {
         [output setValue:anObject forKey:aKey];
         if ([output count] > 1)
-            stop(YES); // AT_DEREF(stop, YES) - FIXME Replace with proper @ref @deref when in ObjJ.
+            @deref(stop) = YES;
     }
 
     [input1 enumerateKeysAndObjectsUsingBlock:stoppingFunction];
@@ -389,14 +392,51 @@
     var dict = [[CPDictionary alloc] initWithObjects:[CGRectMake(1, 2, 3, 4), CGPointMake(5, 6)] forKeys:[@"key1", @"key2"]],
         d = [dict description];
 
-    [self assertTrue:d.indexOf("x: 1") !== -1 message:"Can't find 'x: 1' in description of dictionary " + d];
-    [self assertTrue:d.indexOf("y: 2") !== -1 message:"Can't find 'y: 2' in description of dictionary " + d];
-    [self assertTrue:d.indexOf("width: 3") !== -1 message:"Can't find 'width: 3' in description of dictionary " + d];
-    [self assertTrue:d.indexOf("height: 4") !== -1 message:"Can't find 'height: 4' in description of dictionary " + d];
-    [self assertTrue:d.indexOf("x: 5") !== -1 message:"Can't find 'x: 5' in description of dictionary " + d];
-    [self assertTrue:d.indexOf("y: 6") !== -1 message:"Can't find 'y: 6' in description of dictionary " + d];
+    [self assertTrue:d.indexOf("(1, 2)") !== -1 message:"Can't find '(1, 2)' in description of dictionary " + d];
+    [self assertTrue:d.indexOf("(3, 4)") !== -1 message:"Can't find '(3, 4)' in description of dictionary " + d];
+    [self assertTrue:d.indexOf("(5, 6)") !== -1 message:"Can't find '(5, 6)' in description of dictionary " + d];
 
-    [self assert:'@{\n\tkey1: @[\n\t\t@"1",\n\t\t@"2",\n\t\t@"3"\n\t],\n\tkey2: @"This is a string",\n\tkey3: @{\n\t\tanother: @"object",\n\t},\n}' equals:[json_dict description]];
+    [self assert:'@{\n    @"key1": @[\n        @"1",\n        @"2",\n        @"3"\n    ],\n    @"key2": @"This is a string",\n    @"key3": @{\n        @"another": @"object"\n    }\n}' equals:[json_dict description]];
+}
+
+- (void)testInitWithObjectsAndKeys
+{
+    var dict = [[CPDictionary alloc] initWithObjectsAndKeys:@"Value1", @"Key1", nil, @"Key2", @"Value3", @"Key3"];
+
+    [self assert:2 equals:[dict count]];
+    [self assert:@"Value1" equals:[dict objectForKey:@"Key1"]];
+    [self assert:nil equals:[dict objectForKey:@"Key2"]]; // No key/value pair
+    [self assert:@"Value3" equals:[dict objectForKey:@"Key3"]];
+}
+
+- (void)testDictionaryLiteral
+{
+    var dict = @{
+            @"Key1": @"Value1",
+            @"Key2": [CPNull null],
+            @"Key3": 2
+        };
+
+    [self assert:3 equals:[dict count]];
+    [self assert:@"Value1" equals:[dict objectForKey:@"Key1"]];
+    [self assert:[CPNull null] same:[dict objectForKey:@"Key2"]];
+    [self assert:2 equals:[dict objectForKey:@"Key3"]];
+}
+
+- (void)testDictionaryLiteralExpressions
+{
+    var aKey = @"aKey",
+        aValue = 5,
+        dict = @{
+            @"Key" + 1: @"Value" + 1,
+            @"Key2": NO ? 1 : 2,
+            aKey: aValue,   // trailing comma is allowed
+        };
+
+    [self assert:3 equals:[dict count]];
+    [self assert:@"Value1" equals:[dict objectForKey:@"Key1"]];
+    [self assert:2 equals:[dict objectForKey:@"Key2"]];
+    [self assert:5 equals:[dict objectForKey:@"aKey"]];
 }
 
 @end

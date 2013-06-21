@@ -23,29 +23,26 @@
 @import "CGGeometry.j"
 @import "CPImageView.j"
 @import "CPView.j"
+@import "CPWindow_Constants.j"
 
 
 /*
     @global
     @group CPProgressIndicatorStyle
 */
-CPProgressIndicatorBarStyle         = 0;
+CPProgressIndicatorBarStyle = 0;
 /*
     @global
     @group CPProgressIndicatorStyle
 */
-CPProgressIndicatorSpinningStyle    = 1;
+CPProgressIndicatorSpinningStyle = 1;
 /*
     @global
     @group CPProgressIndicatorStyle
 */
-CPProgressIndicatorHUDBarStyle      = 2;
+CPProgressIndicatorHUDBarStyle = 2;
 
-var CPProgressIndicatorSpinningStyleColors  = nil,
-
-    CPProgressIndicatorClassName            = nil,
-    CPProgressIndicatorStyleIdentifiers     = nil,
-    CPProgressIndicatorStyleSizes           = nil;
+var CPProgressIndicatorSpinningStyleColors = [];
 
 /*!
     @ingroup appkit
@@ -64,7 +61,7 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
 
     CPControlSize               _controlSize;
 
-    BOOL                        _isIndeterminate;
+    BOOL                        _indeterminate;
     CPProgressIndicatorStyle    _style;
 
     BOOL                        _isAnimating;
@@ -73,66 +70,30 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
     BOOL                        _isDisplayedWhenStopped;
 }
 
-/*
-    @ignore
-*/
-+ (void)initialize
++ (CPString)defaultThemeClass
 {
-    if (self !== [CPProgressIndicator class])
-        return;
+    return @"progress-indicator";
+}
 
-    var bundle = [CPBundle bundleForClass:self];
++ (CPDictionary)themeAttributes
+{
+    return @{
+            @"indeterminate-bar-color": [CPNull null],
+            @"bar-color": [CPNull null],
+            @"default-height": 20,
+            @"bezel-color": [CPNull null],
+            @"spinning-mini-gif": [CPNull null],
+            @"spinning-small-gif": [CPNull null],
+            @"spinning-regular-gif": [CPNull null],
+        };
+}
 
-    CPProgressIndicatorSpinningStyleColors = [];
++ (Class)_binderClassForBinding:(CPString)aBinding
+{
+    if (aBinding === CPValueBinding || aBinding === @"isIndeterminate")
+        return [_CPProgressIndicatorBinder class];
 
-    CPProgressIndicatorSpinningStyleColors[CPMiniControlSize]       = [CPColor colorWithPatternImage:[[CPImage alloc] initWithContentsOfFile:
-        [bundle pathForResource:@"CPProgressIndicator/CPProgressIndicatorSpinningStyleMini.gif"] size:CGSizeMake(16.0, 16.0)]];
-    CPProgressIndicatorSpinningStyleColors[CPSmallControlSize]      = [CPColor colorWithPatternImage:[[CPImage alloc] initWithContentsOfFile:
-        [bundle pathForResource:@"CPProgressIndicator/CPProgressIndicatorSpinningStyleSmall.gif"] size:CGSizeMake(32.0, 32.0)]];
-    CPProgressIndicatorSpinningStyleColors[CPRegularControlSize]    = [CPColor colorWithPatternImage:[[CPImage alloc] initWithContentsOfFile:
-        [bundle pathForResource:@"CPProgressIndicator/CPProgressIndicatorSpinningStyleRegular.gif"] size:CGSizeMake(64.0, 64.0)]];
-
-    CPProgressIndicatorBezelBorderViewPool = [];
-
-    var start = CPProgressIndicatorBarStyle,
-        end = CPProgressIndicatorHUDBarStyle;
-
-    for (; start <= end; ++start)
-    {
-        CPProgressIndicatorBezelBorderViewPool[start] = [];
-        CPProgressIndicatorBezelBorderViewPool[start][CPMiniControlSize]    = [];
-        CPProgressIndicatorBezelBorderViewPool[start][CPSmallControlSize]   = [];
-        CPProgressIndicatorBezelBorderViewPool[start][CPRegularControlSize]  = [];
-    }
-
-    CPProgressIndicatorClassName = [self className];
-    CPProgressIndicatorStyleIdentifiers = [];
-
-    CPProgressIndicatorStyleIdentifiers[CPProgressIndicatorBarStyle]        = @"Bar";
-    CPProgressIndicatorStyleIdentifiers[CPProgressIndicatorSpinningStyle]   = @"Spinny";
-    CPProgressIndicatorStyleIdentifiers[CPProgressIndicatorHUDBarStyle]     = @"HUDBar";
-
-    var regularIdentifier = _CPControlIdentifierForControlSize(CPRegularControlSize),
-        smallIdentifier = _CPControlIdentifierForControlSize(CPSmallControlSize),
-        miniIdentifier = _CPControlIdentifierForControlSize(CPMiniControlSize);
-
-    CPProgressIndicatorStyleSizes = [];
-
-    // Bar Style
-    var prefixes = [
-            CPProgressIndicatorClassName + @"BezelBorder" + CPProgressIndicatorStyleIdentifiers[CPProgressIndicatorBarStyle],
-            CPProgressIndicatorClassName + @"Bar" + CPProgressIndicatorStyleIdentifiers[CPProgressIndicatorBarStyle],
-            CPProgressIndicatorClassName + @"BezelBorder" + CPProgressIndicatorStyleIdentifiers[CPProgressIndicatorHUDBarStyle],
-            CPProgressIndicatorClassName + @"Bar" + CPProgressIndicatorStyleIdentifiers[CPProgressIndicatorHUDBarStyle]
-        ];
-
-    for (var i = 0, count = prefixes.length; i < count; i++)
-    {
-        var prefix = prefixes[i];
-        CPProgressIndicatorStyleSizes[prefix + regularIdentifier] = [_CGSizeMake(3.0, 16.0), _CGSizeMake(1.0, 16.0), _CGSizeMake(3.0, 16.0)];
-        CPProgressIndicatorStyleSizes[prefix + smallIdentifier] = [_CGSizeMake(3.0, 16.0), _CGSizeMake(1.0, 16.0), _CGSizeMake(3.0, 16.0)];
-        CPProgressIndicatorStyleSizes[prefix + miniIdentifier] = [_CGSizeMake(3.0, 16.0), _CGSizeMake(1.0, 16.0), _CGSizeMake(3.0, 16.0)];
-    }
+    return [super _binderClassForBinding:aBinding];
 }
 
 - (id)initWithFrame:(CGRect)aFrame
@@ -151,8 +112,7 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
 
         _controlSize = CPRegularControlSize;
 
-        [self updateBackgroundColor];
-        [self drawBar];
+        [self setNeedsLayout];
     }
 
     return self;
@@ -314,12 +274,12 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
     Specifies whether this progress indicator should be indeterminate or display progress based on it's max and min.
     @param isDeterminate \c YES makes the indicator indeterminate
 */
-- (void)setIndeterminate:(BOOL)isIndeterminate
+- (void)setIndeterminate:(BOOL)indeterminate
 {
-    if (_isIndeterminate == isIndeterminate)
+    if (_indeterminate == indeterminate)
         return;
 
-    _isIndeterminate = isIndeterminate;
+    _indeterminate = indeterminate;
 
     [self updateBackgroundColor];
 }
@@ -329,7 +289,7 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
 */
 - (BOOL)isIndeterminate
 {
-    return _isIndeterminate;
+    return _indeterminate;
 }
 
 /*!
@@ -343,6 +303,8 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
 
     _style = aStyle;
 
+    [self setTheme:(_style === CPProgressIndicatorHUDBarStyle) ? [CPTheme defaultHudTheme] : [CPTheme defaultTheme]];
+
     [self updateBackgroundColor];
 }
 
@@ -354,8 +316,7 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
     if (_style == CPProgressIndicatorSpinningStyle)
         [self setFrameSize:[[CPProgressIndicatorSpinningStyleColors[_controlSize] patternImage] size]];
     else
-        [self setFrameSize:CGSizeMake(CGRectGetWidth([self frame]), CPProgressIndicatorStyleSizes[
-            CPProgressIndicatorClassName + @"BezelBorder" + CPProgressIndicatorStyleIdentifiers[CPProgressIndicatorBarStyle] + _CPControlIdentifierForControlSize(_controlSize)][0].height)];
+        [self setFrameSize:CGSizeMake(CGRectGetWidth([self frame]), [self valueForThemeAttribute:@"default-height"])];
 }
 
 /*!
@@ -405,25 +366,12 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
 /* @ignore */
 - (void)drawBar
 {
-    if (_style == CPProgressIndicatorSpinningStyle)
-        return;
-
-    var barView = [self layoutEphemeralSubviewNamed:"bar-view"
-                                         positioned:CPWindowBelow
-                    relativeToEphemeralSubviewNamed:nil];
-
-    [barView setBackgroundColor:_CPControlThreePartImagePattern(
-        NO,
-        CPProgressIndicatorStyleSizes,
-        CPProgressIndicatorClassName,
-        @"Bar",
-        CPProgressIndicatorStyleIdentifiers[_style],
-        _CPControlIdentifierForControlSize(_controlSize))];
+    [self setNeedsLayout];
 }
 
 - (CPView)createEphemeralSubviewNamed:(CPString)aName
 {
-    return [[CPView alloc] initWithFrame:_CGRectMakeZero()];
+    return [[CPView alloc] initWithFrame:CGRectMakeZero()];
 }
 
 - (CGRect)rectForEphemeralSubviewNamed:(CPString)aViewName
@@ -436,7 +384,10 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
         if (barWidth > 0.0 && barWidth < 4.0)
             barWidth = 4.0;
 
-        return _CGRectMake(0, 0, barWidth, 16.0);
+        if (_indeterminate)
+            barWidth = width;
+
+        return CGRectMake(0, 0, barWidth, [self valueForThemeAttribute:@"default-height"]);
     }
 
     return nil;
@@ -444,6 +395,18 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
 
 /* @ignore */
 - (void)updateBackgroundColor
+{
+    if ([CPProgressIndicatorSpinningStyleColors count] === 0)
+    {
+        CPProgressIndicatorSpinningStyleColors[CPMiniControlSize] = [self valueForThemeAttribute:@"spinning-mini-gif"];
+        CPProgressIndicatorSpinningStyleColors[CPSmallControlSize] = [self valueForThemeAttribute:@"spinning-small-gif"];
+        CPProgressIndicatorSpinningStyleColors[CPRegularControlSize] = [self valueForThemeAttribute:@"spinning-regular-gif"];
+    }
+
+    [self setNeedsLayout];
+}
+
+- (void)layoutSubviews
 {
     if (YES)//_isBezeled)
     {
@@ -458,15 +421,16 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
         }
         else
         {
-            [self setBackgroundColor:_CPControlThreePartImagePattern(
-                NO,
-                CPProgressIndicatorStyleSizes,
-                CPProgressIndicatorClassName,
-                @"BezelBorder",
-                CPProgressIndicatorStyleIdentifiers[_style],
-                _CPControlIdentifierForControlSize(_controlSize))];
+           [self setBackgroundColor:[self currentValueForThemeAttribute:@"bezel-color"]];
 
-            [self drawBar];
+           var barView = [self layoutEphemeralSubviewNamed:"bar-view"
+                                                 positioned:CPWindowBelow
+                            relativeToEphemeralSubviewNamed:nil];
+
+           if (_indeterminate)
+               [barView setBackgroundColor:[self currentValueForThemeAttribute:@"indeterminate-bar-color"]];
+           else
+               [barView setBackgroundColor:[self currentValueForThemeAttribute:@"bar-color"]];
         }
     }
     else
@@ -486,7 +450,7 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
         _maxValue                   = [aCoder decodeObjectForKey:@"_maxValue"];
         _doubleValue                = [aCoder decodeObjectForKey:@"_doubleValue"];
         _controlSize                = [aCoder decodeObjectForKey:@"_controlSize"];
-        _isIndeterminate            = [aCoder decodeObjectForKey:@"_isIndeterminate"];
+        _indeterminate              = [aCoder decodeObjectForKey:@"_indeterminate"];
         _style                      = [aCoder decodeIntForKey:@"_style"];
         _isAnimating                = [aCoder decodeObjectForKey:@"_isAnimating"];
         _isDisplayedWhenStoppedSet  = [aCoder decodeObjectForKey:@"_isDisplayedWhenStoppedSet"];
@@ -500,8 +464,8 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
 
 - (void)encodeWithCoder:(CPCoder)aCoder
 {
-    // Don't encode the background colour. It can be recreated based on the flags and if encoded causes hardcoded
-    // image paths in the cib while just wasting space.
+    // Don't encode the background colour. It can be recreated based on the flags
+    // and if encoded causes hardcoded image paths in the cib while just wasting space.
     var backgroundColor = [self backgroundColor];
     [self setBackgroundColor:nil];
     [super encodeWithCoder:aCoder];
@@ -511,11 +475,60 @@ var CPProgressIndicatorSpinningStyleColors  = nil,
     [aCoder encodeObject:_maxValue forKey:@"_maxValue"];
     [aCoder encodeObject:_doubleValue forKey:@"_doubleValue"];
     [aCoder encodeObject:_controlSize forKey:@"_controlSize"];
-    [aCoder encodeObject:_isIndeterminate forKey:@"_isIndeterminate"];
+    [aCoder encodeObject:_indeterminate forKey:@"_indeterminate"];
     [aCoder encodeInt:_style forKey:@"_style"];
     [aCoder encodeObject:_isAnimating forKey:@"_isAnimating"];
     [aCoder encodeObject:_isDisplayedWhenStoppedSet forKey:@"_isDisplayedWhenStoppedSet"];
     [aCoder encodeObject:_isDisplayedWhenStopped forKey:@"_isDisplayedWhenStopped"];
+}
+
+@end
+
+
+@implementation _CPProgressIndicatorBinder : CPBinder
+
+- (void)_updatePlaceholdersWithOptions:(CPDictionary)options forBinding:(CPString)aBinding
+{
+    var value = aBinding === CPValueBinding ? 0.0 : YES;
+
+    [self _setPlaceholder:value forMarker:CPMultipleValuesMarker isDefault:YES];
+    [self _setPlaceholder:value forMarker:CPNoSelectionMarker isDefault:YES];
+    [self _setPlaceholder:value forMarker:CPNotApplicableMarker isDefault:YES];
+    [self _setPlaceholder:value forMarker:CPNullMarker isDefault:YES];
+}
+
+- (id)valueForBinding:(CPString)aBinding
+{
+    if (aBinding === CPValueBinding)
+        return [_source doubleValue];
+    else if (aBinding === @"isIndeterminate")
+        [_source isIndeterminate];
+    else
+        return [super valueForBinding:aBinding];
+}
+
+- (BOOL)_setValue:(id)aValue forBinding:(CPString)aBinding
+{
+    if (aBinding === CPValueBinding)
+        [_source setDoubleValue:aValue];
+    else if (aBinding === @"isIndeterminate")
+        [_source setIndeterminate:aValue];
+    else
+        return NO;
+
+    return YES;
+}
+
+- (void)setValue:(id)aValue forBinding:(CPString)aBinding
+{
+    if (![self _setValue:aValue forBinding:aBinding])
+        [super setValue:aValue forBinding:aBinding];
+}
+
+- (void)setPlaceholderValue:(id)aValue withMarker:(CPString)aMarker forBinding:(CPString)aBinding
+{
+    if (![self _setValue:aValue forBinding:aBinding])
+        [super setPlaceholderValue:aValue withMarker:aMarker forBinding:aBinding];
 }
 
 @end

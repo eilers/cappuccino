@@ -1,6 +1,7 @@
 
-@import "CPArray.j"
+@import "_CPArray.j"
 
+@class CPIndexSet
 
 /*!
     @class CPMutableArray
@@ -217,7 +218,7 @@
 */
 - (void)removeObject:(id)anObject
 {
-    [self removeObject:anObject inRange:CPMakeRange(0, length)];
+    [self removeObject:anObject inRange:CPMakeRange(0, [self count])];
 }
 
 /*!
@@ -232,7 +233,7 @@
     while ((index = [self indexOfObject:anObject inRange:aRange]) != CPNotFound)
     {
         [self removeObjectAtIndex:index];
-        aRange = CPIntersectionRange(CPMakeRange(index, length - index), aRange);
+        aRange = CPIntersectionRange(CPMakeRange(index, [self count] - index), aRange);
     }
 }
 
@@ -261,7 +262,7 @@
 }
 
 /*!
-    Remove the first instance of \c anObject from the array.
+    Remove all instances of \c anObject from the array.
     The search for the object is done using \c ==.
     @param anObject the object to remove
 */

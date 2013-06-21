@@ -20,15 +20,19 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 */
 
-@import <Foundation/Foundation.j>
-@import <AppKit/AppKit.j>
+@import <Foundation/CPObject.j>
+@import <Foundation/CPArray.j>
+@import <Foundation/CPDictionary.j>
+@import <Foundation/CPString.j>
+@import <AppKit/CPApplication.j>
 @import <BlendKit/BlendKit.j>
-
-@import "NSFoundation.j"
-@import "NSAppKit.j"
 
 @import "Nib2CibKeyedUnarchiver.j"
 @import "Converter.j"
+@import "Converter+Mac.j"
+
+
+Nib2CibColorizeOutput = YES;
 
 var FILE = require("file"),
     OS = require("os"),
@@ -37,22 +41,37 @@ var FILE = require("file"),
     stream = require("narwhal/term").stream,
     StaticResource = require("objective-j").StaticResource,
 
-    DefaultTheme = "Aristo",
+    DefaultTheme = "Aristo2",
     BuildTypes = ["Debug", "Release"],
     DefaultFile = "MainMenu",
     AllowedStoredOptionsRe = new RegExp("^(defaultTheme|auxThemes|verbosity|quiet|frameworks|format)$"),
-    ArgsRe = /"[^\"]+"|'[^\']+'|\S+/g;
+    ArgsRe = /"[^\"]+"|'[^\']+'|\S+/g,
+
+    SharedNib2Cib = nil;
 
 
 @implementation Nib2Cib : CPObject
 {
     CPArray         commandLineArgs;
     JSObject        parser;
+    JSObject        commandLineOptions;
     JSObject        nibInfo;
-    CPString        appDirectory;
-    CPString        resourcesDirectory;
-    CPDictionary    infoPlist;
-    CPArray         userNSClasses;
+    CPString        appDirectory @accessors(readonly);
+    CPDictionary    frameworks @accessors(readonly);
+    CPString        appResourceDirectory @accessors(readonly);
+    CPDictionary    infoPlist @accessors(readonly);
+    CPArray         userNSClasses @accessors(readonly);
+    CPArray         themes @accessors(readonly);
+}
+
++ (Nib2Cib)sharedNib2Cib
+{
+    return SharedNib2Cib;
+}
+
++ (CPTheme)defaultTheme
+{
+    return [SharedNib2Cib themes][0];
 }
 
 - (id)initWithArgs:(CPArray)theArgs
@@ -61,13 +80,18 @@ var FILE = require("file"),
 
     if (self)
     {
+        if (!SharedNib2Cib)
+            SharedNib2Cib = self;
+
         commandLineArgs = theArgs;
         parser = new (require("narwhal/args").Parser)();
         nibInfo = {};
         appDirectory = @"";
-        resourcesDirectory = @"";
-        infoPlist = [CPDictionary dictionary];
+        frameworks = [CPDictionary dictionary];
+        appResourceDirectory = @"";
+        infoPlist = @{};
         userNSClasses = [];
+        themes = [];
     }
 
     return self;
@@ -77,19 +101,25 @@ var FILE = require("file"),
 {
     try
     {
-        var options = [self parseOptionsFromArgs:commandLineArgs];
+        commandLineOptions = [self parseOptionsFromArgs:commandLineArgs];
 
-        [self setLogLevel:options.quiet ? -1 : options.verbosity];
+        Nib2CibColorizeOutput = !commandLineOptions.noColors;
+        [self setLogLevel:commandLineOptions.quiet ? -1 : commandLineOptions.verbosity];
         [self checkPrerequisites];
 
-        if (options.watch)
-            [self watchWithOptions:options];
+        if (commandLineOptions.watch)
+            [self watchWithOptions:commandLineOptions];
         else
-            [self convertWithOptions:options inputFile:nil];
+        {
+            var success = [self convertWithOptions:commandLineOptions inputPath:nil];
+
+            if (!success)
+                OS.exit(1);
+        }
     }
     catch (anException)
     {
-        CPLog.fatal([self exceptionReason:anException]);
+        [self logError:[self exceptionReason:anException]];
         OS.exit(1);
     }
 }
@@ -103,25 +133,55 @@ var FILE = require("file"),
         [self failWithMessage:@"fontinfo does not appear to be installed"];
 }
 
-- (BOOL)convertWithOptions:(JSObject)options inputFile:(CPString)inputFile
+- (void)enumerateFrameworks
+{
+    var frameworksDirectory = FILE.join(appDirectory, "Frameworks"),
+        debugFrameworksDirectory = FILE.join(frameworksDirectory, "Debug");
+
+    [debugFrameworksDirectory, frameworksDirectory].forEach(function(directory)
+    {
+        if (FILE.isDirectory(directory))
+        {
+            var frameworkList = FILE.list(directory);
+
+            frameworkList.forEach(function(framework)
+            {
+                if (framework !== @"Debug" && ![frameworks containsKey:framework])
+                {
+                    var resourceDirectory = FILE.join(directory, framework, "Resources");
+
+                    if (FILE.isDirectory(resourceDirectory))
+                        resourceDirectory = FILE.canonical(resourceDirectory);
+                    else
+                        resourceDirectory = @"";
+
+                    [frameworks setValue:{resourceDirectory:resourceDirectory, loaded:false} forKey:framework];
+                }
+            });
+        }
+    });
+}
+
+- (BOOL)convertWithOptions:(JSObject)options inputPath:(CPString)inputPath
 {
     try
     {
-        inputFile = inputFile || [self getInputFile:options.args];
+        inputPath = inputPath || [self getInputPath:options.args];
 
-        [self getAppAndResourceDirectoriesFromInputFile:inputFile options:options];
+        [self getAppAndResourceDirectoriesFromInputPath:inputPath options:options];
+        [self enumerateFrameworks];
 
         if (options.readStoredOptions)
         {
-            options = [self mergeOptionsWithStoredOptions:options inputFile:inputFile];
+            options = [self mergeOptionsWithStoredOptions:options inputPath:inputPath];
             [self setLogLevel:options.quiet ? -1 : options.verbosity];
         }
 
         if (!options.quiet && options.verbosity > 0)
             [self printVersion];
 
-        var outputFile = [self getOutputFileFromInputFile:inputFile args:options.args],
-            configInfo = [self readConfigFile:options.configFile || @"" inputFile:inputFile];
+        var configInfo = [self readConfigFile:options.configFile || @"" inputPath:inputPath],
+            outputPath = [self getOutputPathFromInputPath:inputPath args:options.args];
 
         infoPlist = configInfo.plist;
 
@@ -138,45 +198,48 @@ var FILE = require("file"),
                 [CPFont setSystemFontSize:parseFloat(systemFontSize, 10)];
         }
         else
-            infoPlist = [CPDictionary dictionary];
+            infoPlist = @{};
 
-        var themeList = [self getThemeList:options],
-            themes = [self loadThemesFromList:themeList];
+        var themeList = [self getThemeList:options];
+
+        [self loadThemesFromList:themeList];
+        [self loadFrameworks:options.frameworks verbosity:options.verbosity];
+        [self loadNSClassesFromBundle:[CPBundle mainBundle]];
+
+        var frameworkList = [];
+
+        [frameworks allKeys].forEach(function(name)
+        {
+            var info = [frameworks valueForKey:name];
+
+            if (info.resourceDirectory)
+                name += "*";
+
+            if (info.loaded)
+                name += "+";
+
+            frameworkList.push(name);
+        });
 
         CPLog.info("\n-------------------------------------------------------------");
-        CPLog.info("Input         : " + inputFile);
-        CPLog.info("Output        : " + outputFile);
-        CPLog.info("Format        : " + ["Auto", "Mac", "iPhone"][options.format]);
+        CPLog.info("Input         : " + inputPath);
+        CPLog.info("Output        : " + outputPath);
         CPLog.info("Application   : " + appDirectory);
-        CPLog.info("Resources     : " + resourcesDirectory);
-        CPLog.info("Frameworks    : " + (options.frameworks || ""));
+        CPLog.info("Frameworks    : " + (frameworkList.join(", ") || ""));
         CPLog.info("Default theme : " + themeList[0]);
         CPLog.info("Aux themes    : " + themeList.slice(1).join(", "));
         CPLog.info("Config file   : " + (configInfo.path || ""));
         CPLog.info("System Font   : " + [CPFont systemFontSize] + "px " + [CPFont systemFontFace]);
         CPLog.info("-------------------------------------------------------------\n");
 
-        var converter = [[Converter alloc] initWithInputPath:inputFile
-                                                      format:options.format
-                                                      themes:themes];
-
-        [converter setOutputPath:outputFile];
-        [converter setResourcesPath:resourcesDirectory];
-
-        var loadFrameworksCallback = function()
-        {
-            [self loadNSClassesFromBundle:[CPBundle mainBundle]];
-            [converter setUserNSClasses:userNSClasses];
-            [converter convert];
-        };
-
-        [self loadFrameworks:options.frameworks verbosity:options.verbosity callback:loadFrameworksCallback];
+        var converter = [[Converter alloc] initWithInputPath:inputPath outputPath:outputPath];
+        [converter convert];
 
         return YES;
     }
     catch (anException)
     {
-        CPLog.fatal([self exceptionReason:anException]);
+        [self logError:[self exceptionReason:anException]];
         return NO;
     }
 }
@@ -249,7 +312,7 @@ var FILE = require("file"),
             // Let the converter log however the user configured it
             [self setLogLevel:verbosity];
 
-            var success = [self convertWithOptions:options inputFile:nib];
+            var success = [self convertWithOptions:options inputPath:nib];
 
             [self setLogLevel:1];
 
@@ -258,7 +321,7 @@ var FILE = require("file"),
                 if (verbosity > 0)
                     stream.print();
                 else
-                    CPLog.warn("Conversion successful");
+                    CPLog.info("Conversion successful");
             }
         }
 
@@ -273,11 +336,6 @@ var FILE = require("file"),
     parser.option("--watch", "watch")
         .set(true)
         .help("Ask nib2cib to watch a directory for changes");
-
-    parser.option("-R", "resourcesDir")
-        .set()
-        .displayName("directory")
-        .help("Set the Resources directory, usually unnecessary as it is inferred from the input path");
 
     parser.option("--default-theme", "defaultTheme")
         .set()
@@ -311,14 +369,19 @@ var FILE = require("file"),
         .def(true)
         .help("Do not read stored options");
 
-    parser.option("--mac", "format")
-        .set(NibFormatMac)
-        .def(NibFormatUndetermined)
-        .help("Set format to Mac");
+    parser.option("--no-colors", "noColors")
+        .set(true)
+        .def(false)
+        .help("Don't colorize output");
 
     parser.option("--version", "showVersion")
         .action(function() { [self printVersionAndExit]; })
         .help("Show the version of nib2cib and quit");
+
+    parser.option("-R", "deprecatedResourcesDir")
+        .set()
+        .displayName("resources directory")
+        .help("This option is deprecated.");
 
     parser.helpful();
 
@@ -333,13 +396,13 @@ var FILE = require("file"),
     return options;
 }
 
-- (JSObject)mergeOptionsWithStoredOptions:(JSObject)options inputFile:(CPString)inputFile
+- (JSObject)mergeOptionsWithStoredOptions:(JSObject)options inputPath:(CPString)inputPath
 {
     // We have to clone options
     var userOptions = [self readStoredOptionsAtPath:FILE.join(SYS.env["HOME"], ".nib2cibconfig")],
         appOptions = [self readStoredOptionsAtPath:FILE.join(appDirectory, "nib2cib.conf")],
-        filename = FILE.basename(inputFile, FILE.extension(inputFile)) + ".conf",
-        fileOptions = [self readStoredOptionsAtPath:FILE.join(FILE.dirname(inputFile), filename)];
+        filename = FILE.basename(inputPath, FILE.extension(inputPath)) + ".conf",
+        fileOptions = [self readStoredOptionsAtPath:FILE.join(FILE.dirname(inputPath), filename)];
 
     // At this point we have an array of args without the initial command in args[0],
     // add the command and parse the options.
@@ -390,6 +453,8 @@ var FILE = require("file"),
 
 - (void)printOptions:options
 {
+    var option;
+
     for (option in options)
     {
         var value = options[option];
@@ -407,6 +472,8 @@ var FILE = require("file"),
 // Merges properties in sourceOptions into targetOptions, overriding properties in targetOptions
 - (void)mergeOptions:(JSObject)sourceOptions with:(JSObject)targetOptions
 {
+    var option;
+
     for (option in sourceOptions)
     {
         // Make sure only a supported option is given
@@ -440,31 +507,31 @@ var FILE = require("file"),
         CPLogRegister(CPLogPrint, null, logFormatter);
 }
 
-- (CPString)getInputFile:(CPArray)theArgs
+- (CPString)getInputPath:(CPArray)theArgs
 {
-    var inputFile = theArgs[0] || DefaultFile,
+    var inputPath = theArgs[0] || DefaultFile,
         path = "";
 
-    if (!/^.+\.[nx]ib$/.test(inputFile))
+    if (!/^.+\.[nx]ib$/.test(inputPath))
     {
-        if (path = [self findInputFile:inputFile extension:@".xib"])
-            inputFile = path;
-        else if (path = [self findInputFile:inputFile extension:@".nib"])
-            inputFile = path;
+        if (path = [self findInputPath:inputPath extension:@".xib"])
+            inputPath = path;
+        else if (path = [self findInputPath:inputPath extension:@".nib"])
+            inputPath = path;
         else
-            [self failWithMessage:@"Cannot find the input file (.xib or .nib): " + FILE.canonical(inputFile)];
+            [self failWithMessage:@"Cannot find the input file (.xib or .nib): " + FILE.canonical(inputPath)];
     }
-    else if (path = [self findInputFile:inputFile extension:nil])
-        inputFile = path;
+    else if (path = [self findInputPath:inputPath extension:nil])
+        inputPath = path;
     else
-        [self failWithMessage:@"Could not read the input file: " + FILE.canonical(inputFile)];
+        [self failWithMessage:@"Could not read the input file: " + FILE.canonical(inputPath)];
 
-    return FILE.canonical(inputFile);
+    return FILE.canonical(inputPath);
 }
 
-- (void)findInputFile:(CPString)inputFile extension:(CPString)extension
+- (void)findInputPath:(CPString)inputPath extension:(CPString)extension
 {
-    var path = inputFile;
+    var path = inputPath;
 
     if (extension)
         path += extension;
@@ -472,7 +539,7 @@ var FILE = require("file"),
     if (FILE.isReadable(path))
         return path;
 
-    if (FILE.basename(FILE.dirname(inputFile)) !== "Resources" && FILE.isDirectory("Resources"))
+    if (FILE.basename(FILE.dirname(inputPath)) !== "Resources" && FILE.isDirectory("Resources"))
     {
         path = FILE.resolve(path, FILE.join("Resources", FILE.basename(path)));
 
@@ -483,71 +550,59 @@ var FILE = require("file"),
     return null;
 }
 
-- (void)getAppAndResourceDirectoriesFromInputFile:(CPString)inputFile options:(JSObject)options
+- (void)getAppAndResourceDirectoriesFromInputPath:(CPString)aPath options:(JSObject)options
 {
-    appDirectory = resourcesDirectory = "";
+    appDirectory = @"";
 
-    if (options.resourcesDir)
-    {
-        var path = FILE.canonical(options.resourcesDir);
-
-        if (!FILE.isDirectory(path))
-            [self failWithMessage:@"Cannot read resources at: " + path];
-
-        resourcesDirectory = path;
-    }
-
-    var parentDir = FILE.dirname(inputFile);
+    var parentDir = FILE.dirname(aPath);
 
     if (FILE.basename(parentDir) === "Resources")
     {
         appDirectory = FILE.dirname(parentDir);
-        resourcesDirectory = resourcesDirectory || parentDir;
+        appResourceDirectory = parentDir;
     }
     else
     {
         appDirectory = parentDir;
 
-        if (!resourcesDirectory)
+        if (!appResourceDirectory)
         {
             var path = FILE.join(appDirectory, "Resources");
 
             if (FILE.isDirectory(path))
-                resourcesDirectory = path;
+                appResourceDirectory = path;
         }
     }
 }
 
-- (CPString)getOutputFileFromInputFile:(CPString)inputFile args:(CPArray)theArgs
+- (CPString)getOutputPathFromInputPath:(CPString)aPath args:(CPArray)theArgs
 {
-    var outputFile = null;
+    var outputPath = null;
 
     if (theArgs.length > 1)
     {
-        outputFile = theArgs[1];
+        outputPath = theArgs[1];
 
-        if (!/^.+\.cib$/.test(outputFile))
-            outputFile += ".cib";
+        if (!/^.+\.cib$/.test(outputPath))
+            outputPath += ".cib";
     }
     else
-        outputFile = FILE.join(FILE.dirname(inputFile), FILE.basename(inputFile, FILE.extension(inputFile))) + ".cib";
+        outputPath = FILE.join(FILE.dirname(aPath), FILE.basename(aPath, FILE.extension(aPath))) + ".cib";
 
-    outputFile = FILE.canonical(outputFile);
+    outputPath = FILE.canonical(outputPath);
 
-    if (!FILE.isWritable(FILE.dirname(outputFile)))
-        [self failWithMessage:@"Cannot write the output file at: " + outputFile];
+    if (!FILE.isWritable(FILE.dirname(outputPath)))
+        [self failWithMessage:@"Cannot write the output file at: " + outputPath];
 
-    return outputFile;
+    return outputPath;
 }
 
-- (void)loadFrameworks:(CPArray)frameworks verbosity:(int)verbosity callback:(JSObject)aCallback
+- (void)loadFrameworks:(CPArray)frameworksToLoad verbosity:(int)verbosity
 {
-    if (!frameworks || frameworks.length === 0)
-        return aCallback();
+    if (!frameworksToLoad || frameworksToLoad.length === 0)
+        return;
 
-    var returnPath = function(path) { return path; };
-
-    frameworks.forEach(function(aFramework)
+    frameworksToLoad.forEach(function(aFramework)
     {
         [self setLogLevel:verbosity];
 
@@ -556,19 +611,13 @@ var FILE = require("file"),
         // If it is just a name with no path components, try to locate it
         if (aFramework.indexOf("/") === -1)
         {
-            frameworkPath = [self findInCappBuild:aFramework isDirectory:YES callback:returnPath];
-
-            if (!frameworkPath)
-                frameworkPath = [self findInFrameworks:FILE.join(appDirectory, "Frameworks")
-                                                  path:aFramework
-                                           isDirectory:YES
-                                              callback:returnPath];
-
-            if (!frameworkPath)
-                frameworkPath = [self findInInstalledFrameworks:aFramework isDirectory:YES callback:returnPath];
+            frameworkPath = [self findInFrameworks:FILE.join(appDirectory, "Frameworks")
+                                              path:aFramework
+                                       isDirectory:YES
+                                          callback:function(path) { return path; }];
         }
         else
-            frameworkPath = FILE.canonical(aFramework);
+            [self failWithMessage:@"-F should be used only with a framework name that is in the app's Framework directory"];
 
         if (!frameworkPath)
             [self failWithMessage:@"Cannot find the framework \"" + aFramework + "\""];
@@ -587,6 +636,11 @@ var FILE = require("file"),
             [self setLogLevel:verbosity];
 
             [self loadNSClassesFromBundle:frameworkBundle];
+
+            var frameworkName = FILE.basename(frameworkPath),
+                info = [frameworks valueForKey:frameworkName];
+
+            info.loaded = true;
         }
         finally
         {
@@ -595,8 +649,6 @@ var FILE = require("file"),
 
         require("browser/timeout").serviceTimeouts();
     });
-
-    aCallback();
 }
 
 - (void)loadNSClassesFromBundle:(CPBundle)aBundle
@@ -629,20 +681,20 @@ var FILE = require("file"),
     if (!defaultTheme)
         defaultTheme = [self getAppKitDefaultThemeName];
 
-    var themes = [CPSet setWithObject:defaultTheme];
+    var themeList = [CPSet setWithObject:defaultTheme];
 
     if (options.auxThemes)
-        [themes addObjectsFromArray:options.auxThemes];
+        [themeList addObjectsFromArray:options.auxThemes];
 
     var auxThemes = infoPlist.valueForKey("CPAuxiliaryThemes");
 
     if (auxThemes)
-        [themes addObjectsFromArray:auxThemes];
+        [themeList addObjectsFromArray:auxThemes];
 
     // Now remove the default theme, get the list as an array, and insert the default at the beginning
-    [themes removeObject:defaultTheme];
+    [themeList removeObject:defaultTheme];
 
-    var allThemes = [themes allObjects];
+    var allThemes = [themeList allObjects];
 
     [allThemes insertObject:defaultTheme atIndex:0];
 
@@ -730,23 +782,20 @@ var FILE = require("file"),
     return themeName;
 }
 
-- (CPArray)loadThemesFromList:(CPArray)themeList
+- (void)loadThemesFromList:(CPArray)themeList
 {
-    var themes = [];
-
     for (var i = 0; i < themeList.length; ++i)
-        themes.push([self loadThemeNamed:themeList[i] directory:resourcesDirectory]);
-
-    return themes;
+        themes.push([self loadThemeNamed:themeList[i]]);
 }
 
-- (CPTheme)loadThemeNamed:(CPString)themeName directory:(CPString)themeDir
+- (CPTheme)loadThemeNamed:(CPString)themeName
 {
     if (/^.+\.blend$/.test(themeName))
         themeName = themeName.substr(0, themeName.length - ".blend".length);
 
     var blendName = themeName + ".blend",
-        themePath = "";
+        themePath = "",
+        themeDir = appResourceDirectory;
 
     if (themeDir)
     {
@@ -815,7 +864,7 @@ var FILE = require("file"),
     return theme;
 }
 
-- (JSObject)readConfigFile:(CPString)configFile inputFile:(CPString)inputFile
+- (JSObject)readConfigFile:(CPString)configFile inputPath:(CPString)inputPath
 {
     var configPath = null,
         path;
@@ -953,11 +1002,19 @@ var FILE = require("file"),
     [CPException raise:ConverterConversionException reason:message];
 }
 
+- (void)logError:(CPString)message
+{
+    if (Nib2CibColorizeOutput)
+        message = CPLogColorize(message, "fatal");
+
+    stream.printError(message);
+}
+
 @end
 
 function logFormatter(aString, aLevel, aTitle)
 {
-    if (aLevel === "info")
+    if (!Nib2CibColorizeOutput || aLevel === "info")
         return aString;
     else
         return CPLogColorize(aString, aLevel);

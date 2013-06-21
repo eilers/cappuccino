@@ -20,24 +20,24 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+@import "CPTextField.j"
 @import "_CPWindowView.j"
 
-var STANDARD_TITLEBAR_HEIGHT = 25.0;
 
 @implementation _CPTitleableWindowView : _CPWindowView
 {
-    CPTextField         _titleField;
+    CPTextField _titleField;
 }
 
 + (int)titleBarHeight
 {
-    return STANDARD_TITLEBAR_HEIGHT;
+    return [[CPTheme defaultTheme] valueForAttributeWithName:@"title-bar-height" forClass:[self class]];
 }
 
 + (CGRect)contentRectForFrameRect:(CGRect)aFrameRect
 {
-    var contentRect = CGRectMakeCopy(aFrameRect),
-        titleBarHeight = [[self class] titleBarHeight];
+    var contentRect = [super contentRectForFrameRect:aFrameRect],
+        titleBarHeight = [self titleBarHeight];
 
     contentRect.origin.y += titleBarHeight;
     contentRect.size.height -= titleBarHeight;
@@ -48,7 +48,7 @@ var STANDARD_TITLEBAR_HEIGHT = 25.0;
 + (CGRect)frameRectForContentRect:(CGRect)aContentRect
 {
     var frameRect = CGRectMakeCopy(aContentRect),
-        titleBarHeight = [[self class] titleBarHeight];
+        titleBarHeight = [self titleBarHeight];
 
     frameRect.origin.y -= titleBarHeight;
     frameRect.size.height += titleBarHeight;
@@ -56,7 +56,7 @@ var STANDARD_TITLEBAR_HEIGHT = 25.0;
     return frameRect;
 }
 
-- (id)initWithFrame:(CPRect)aFrame styleMask:(unsigned)aStyleMask
+- (id)initWithFrame:(CGRect)aFrame styleMask:(unsigned)aStyleMask
 {
     self = [super initWithFrame:aFrame styleMask:aStyleMask];
 
@@ -95,12 +95,14 @@ var STANDARD_TITLEBAR_HEIGHT = 25.0;
 
     // The vertical alignment of the title is set by the theme, so just give it all available space. By default
     // the title will vertically centre within.
-    [_titleField setFrame:_CGRectMake(20.0, 0, width - 40.0, [[self class] titleBarHeight])];
+    [_titleField setFrame:CGRectMake(20.0, 0, width - 40.0, [[self class] titleBarHeight])];
 }
 
 - (void)layoutSubviews
 {
     [super layoutSubviews];
+
+    [self setBackgroundColor:[self valueForThemeAttribute:@"bezel-color"]];
 
     [_titleField setTextColor:[self currentValueForThemeAttribute:@"title-text-color"]];
     [_titleField setFont:[self currentValueForThemeAttribute:@"title-font"]];
@@ -109,6 +111,19 @@ var STANDARD_TITLEBAR_HEIGHT = 25.0;
     [_titleField setLineBreakMode:[self currentValueForThemeAttribute:@"title-line-break-mode"]];
     [_titleField setTextShadowColor:[self currentValueForThemeAttribute:@"title-text-shadow-color"]];
     [_titleField setTextShadowOffset:[self currentValueForThemeAttribute:@"title-text-shadow-offset"]];
+}
+
+- (CGSize)_minimumResizeSize
+{
+    var size = [super _minimumResizeSize];
+
+    size.height += [[self class] titleBarHeight];
+    return size;
+}
+
+- (int)bodyOffset
+{
+    return [self contentRectForFrameRect:[self frame]].origin.y;
 }
 
 @end

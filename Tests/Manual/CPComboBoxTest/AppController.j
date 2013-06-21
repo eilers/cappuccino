@@ -64,6 +64,8 @@
     @outlet CPTextField comboTarget;
     CPString            fontName;
     int                 nextCheckboxY;
+
+    @outlet CPComboBox  disabledCombo;
 }
 
 - (id)init
@@ -84,6 +86,12 @@
 - (void)applicationDidFinishLaunching:(CPNotification)aNotification
 {
     testWindow = [[CPWindow alloc] initWithContentRect:CGRectMake(30, 50, 500, 400) styleMask:CPTitledWindowMask | CPResizableWindowMask];
+
+    // test disabling from IB
+    if (![disabledCombo isEnabled])
+        console.log("diabledCombo box has been correctly disabled from Interface Builder.");
+    else
+        console.log("There was a problem disabling disabledCombo from Interface Builder.");
 
     var contentView = [testWindow contentView],
         companiesScrollView = [[CPScrollView alloc] initWithFrame:CGRectMake(30, 30, 200, 100)],
@@ -121,7 +129,7 @@
 
     [contentView addSubview:employeesScrollView];
 
-    combo = [[CPComboBox alloc] initWithFrame:CGRectMake(250, 240, 200, 29)];
+    combo = [[CPComboBox alloc] initWithFrame:CGRectMake(250, 240, 200, 31)];
     [combo setCompletes:YES];
     [contentView addSubview:combo];
 

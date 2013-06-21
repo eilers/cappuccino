@@ -48,6 +48,8 @@ var DefaultLineWidth = 1.0;
 {
     CGPath  _path;
     float   _lineWidth;
+    CPArray _lineDashes;
+    float   _lineDashesPhase;
 }
 
 /*!
@@ -61,11 +63,11 @@ var DefaultLineWidth = 1.0;
 /*!
     Create a new CPBezierPath object initialized with an oval path drawn within a rectangular path.
 */
-+ (CPBezierPath)bezierPathWithOvalInRect:(CGRect)rect
++ (CPBezierPath)bezierPathWithOvalInRect:(CGRect)aRect
 {
     var path = [self bezierPath];
 
-    [path appendBezierPathWithOvalInRect:rect];
+    [path appendBezierPathWithOvalInRect:aRect];
 
     return path;
 }
@@ -73,11 +75,20 @@ var DefaultLineWidth = 1.0;
 /*!
     Create a new CPBezierPath object initialized with a rectangular path.
 */
-+ (CPBezierPath)bezierPathWithRect:(CGRect)rect
++ (CPBezierPath)bezierPathWithRect:(CGRect)aRect
 {
     var path = [self bezierPath];
 
-    [path appendBezierPathWithRect:rect];
+    [path appendBezierPathWithRect:aRect];
+
+    return path;
+}
+
++ (CPBezierPath)bezierPathWithRoundedRect:(CGRect)aRect xRadius:(float)xRadius yRadius:(float)yRadius
+{
+    var path = [self bezierPath];
+
+    [path appendBezierPathWithRoundedRect:aRect xRadius:xRadius yRadius:yRadius];
 
     return path;
 }
@@ -136,6 +147,8 @@ var DefaultLineWidth = 1.0;
     {
         _path = CGPathCreateMutable();
         _lineWidth = [[self class] defaultLineWidth];
+        _lineDashesPhase = 0;
+        _lineDashes = [];
     }
 
     return self;
@@ -168,7 +181,7 @@ var DefaultLineWidth = 1.0;
 - (CGRect)bounds
 {
     // TODO: this should return this. The controlPointBounds is not a tight fit.
-    // return CGPathGetPathBoundingBox(_path);
+    // return CGPathGetBoundingBox(_path);
 
     return [self controlPointBounds];
 }
@@ -196,6 +209,7 @@ var DefaultLineWidth = 1.0;
     CGContextBeginPath(ctx);
     CGContextAddPath(ctx, _path);
     CGContextSetLineWidth(ctx, [self lineWidth]);
+    CGContextSetLineDash(ctx, _lineDashesPhase, _lineDashes);
     CGContextStrokePath(ctx);
 }
 
@@ -209,8 +223,48 @@ var DefaultLineWidth = 1.0;
     CGContextBeginPath(ctx);
     CGContextAddPath(ctx, _path);
     CGContextSetLineWidth(ctx, [self lineWidth]);
+    CGContextSetLineDash(ctx, _lineDashesPhase, _lineDashes);
     CGContextClosePath(ctx);
     CGContextFillPath(ctx);
+}
+
+/*!
+    Cocoa compatibility.
+*/
+- (void)getLineDash:(CPArrayRef)patternRef count:(NSInteger)count phase:(CGFloatRef)phaseRef
+{
+    return [self getLineDash:patternRef phase:phaseRef];
+}
+
+/*!
+    Retrieve the line dash pattern and phase and write them into the provided references.
+*/
+- (void)getLineDash:(CPArrayRef)patternRef phase:(CGFloatRef)phaseRef
+{
+    if (patternRef)
+        @deref(patternRef) = [_lineDashes copy];
+    if (phaseRef)
+        @deref(phaseRef) = _lineDashesPhase;
+}
+
+/*!
+    Cocoa compatibility.
+*/
+- (void)setLineDash:(CPArray)aPattern count:(NSInteger)count phase:(CGFloat)aPhase
+{
+    [self setLineDash:aPattern phase:aPhase];
+}
+
+/*!
+    Set stroke line dash pattern.
+
+    @param aPattern an array of stroke-skip lengths such as [2, 2, 4, 4]
+    @param aPhase amount of shift for the starting position of the first stroke
+*/
+- (void)setLineDash:(CPArray)aPattern phase:(CGFloat)aPhase
+{
+    _lineDashes = aPattern;
+    _lineDashesPhase = aPhase;
 }
 
 /*!

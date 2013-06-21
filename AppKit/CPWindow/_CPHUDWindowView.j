@@ -20,15 +20,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+@import "CPButton.j"
 @import "CPTextField.j"
 @import "_CPTitleableWindowView.j"
 
-var _CPHUDWindowViewBackgroundColor = nil,
-    _CPHUDWindowViewThemeValues     = nil,
-
-    CPHUDCloseButtonImage           = nil;
-
-var HUD_TITLEBAR_HEIGHT             = 26.0;
 
 @implementation _CPHUDWindowView : _CPTitleableWindowView
 {
@@ -36,47 +31,25 @@ var HUD_TITLEBAR_HEIGHT             = 26.0;
     CPButton            _closeButton;
 }
 
-+ (void)initialize
++ (CPString)defaultThemeClass
 {
-    if (self !== [_CPHUDWindowView class])
-        return;
-
-    var bundle = [CPBundle bundleForClass:self];
-
-    _CPHUDWindowViewBackgroundColor = [CPColor colorWithPatternImage:[[CPNinePartImage alloc] initWithImageSlices:
-        [
-            [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPWindow/HUD/CPWindowHUDBackground0.png"] size:CPSizeMake(7.0, 37.0)],
-            [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPWindow/HUD/CPWindowHUDBackground1.png"] size:CPSizeMake(1.0, 37.0)],
-            [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPWindow/HUD/CPWindowHUDBackground2.png"] size:CPSizeMake(7.0, 37.0)],
-
-            [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPWindow/HUD/CPWindowHUDBackground3.png"] size:CPSizeMake(7.0, 1.0)],
-            [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPWindow/HUD/CPWindowHUDBackground4.png"] size:CPSizeMake(2.0, 2.0)],
-            [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPWindow/HUD/CPWindowHUDBackground5.png"] size:CPSizeMake(7.0, 1.0)],
-
-            [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPWindow/HUD/CPWindowHUDBackground6.png"] size:CPSizeMake(7.0, 3.0)],
-            [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPWindow/HUD/CPWindowHUDBackground7.png"] size:CPSizeMake(1.0, 3.0)],
-            [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"CPWindow/HUD/CPWindowHUDBackground8.png"] size:CPSizeMake(7.0, 3.0)]
-        ]]];
-
-    _CPHUDWindowViewCloseImage        = [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"HUDTheme/WindowClose.png"] size:CPSizeMake(18.0, 18.0)];
-    _CPHUDWindowViewCloseActiveImage  = [[CPImage alloc] initWithContentsOfFile:[bundle pathForResource:@"HUDTheme/WindowCloseActive.png"] size:CPSizeMake(18.0, 18.0)];
-
-    _CPHUDWindowViewThemeValues = [
-        [@"title-font",                 [CPFont systemFontOfSize:[CPFont systemFontSize] - 1]],
-        [@"title-text-color",           [CPColor colorWithWhite:255.0 / 255.0 alpha:0.75]],
-        [@"title-text-color",           [CPColor colorWithWhite:255.0 / 255.0 alpha:1], CPThemeStateKeyWindow],
-        [@"title-text-shadow-color",    [CPColor blackColor]],
-        [@"title-text-shadow-offset",   CGSizeMake(0.0, 1.0)],
-        [@"title-alignment",            CPCenterTextAlignment],
-        // FIXME: Make this to CPLineBreakByTruncatingMiddle once it's implemented.
-        [@"title-line-break-mode",      CPLineBreakByTruncatingTail],
-        [@"title-vertical-alignment",   CPCenterVerticalTextAlignment]
-    ];
+    return @"hud-window-view";
 }
 
-+ (int)titleBarHeight
++ (CGRect)contentRectForFrameRect:(CGRect)aFrameRect
 {
-    return HUD_TITLEBAR_HEIGHT;
+    /*
+        This window view class draws a frame.
+        So we have to inset the content rect to be inside the frame.
+        The top coordinate has already been adjusted by _CPTitleableWindowView.
+    */
+    var contentRect = [super contentRectForFrameRect:aFrameRect];
+
+    contentRect.origin.x += 1;
+    contentRect.size.width -= 2;
+    contentRect.size.height -= 1;
+
+    return contentRect;
 }
 
 - (CGRect)contentRectForFrameRect:(CGRect)aFrameRect
@@ -109,30 +82,17 @@ var HUD_TITLEBAR_HEIGHT             = 26.0;
     return frameRect;
 }
 
-- (id)initWithFrame:(CPRect)aFrame styleMask:(unsigned)aStyleMask
+- (id)initWithFrame:(CGRect)aFrame styleMask:(unsigned)aStyleMask
 {
     self = [super initWithFrame:aFrame styleMask:aStyleMask];
 
     if (self)
     {
-        // Until windows become properly themable, just set these values here in the subclass.
-        [self registerThemeValues:_CPHUDWindowViewThemeValues];
-
-        var bounds = [self bounds];
-
-        [self setBackgroundColor:_CPHUDWindowViewBackgroundColor];
-
         if (_styleMask & CPClosableWindowMask)
         {
-            var closeSize = [_CPHUDWindowViewCloseImage size];
-
-            _closeButton = [[CPButton alloc] initWithFrame:CGRectMake(8.0, 4.0, closeSize.width, closeSize.height)];
-
+            _closeButton = [[CPButton alloc] initWithFrame:CGRectMakeZero()];
             [_closeButton setBordered:NO];
-
-            [_closeButton setImage:_CPHUDWindowViewCloseImage];
-            [_closeButton setAlternateImage:_CPHUDWindowViewCloseActiveImage];
-
+            [_closeButton setButtonType:CPMomentaryChangeButton];
             [self addSubview:_closeButton];
         }
 
@@ -167,7 +127,7 @@ var HUD_TITLEBAR_HEIGHT             = 26.0;
 
 - (CGSize)toolbarOffset
 {
-    return _CGSizeMake(0.0, [[self class] titleBarHeight]);
+    return CGSizeMake(0.0, [[self class] titleBarHeight]);
 }
 
 - (void)tile
@@ -176,22 +136,22 @@ var HUD_TITLEBAR_HEIGHT             = 26.0;
 
     var theWindow = [self window],
         bounds = [self bounds],
-        width = _CGRectGetWidth(bounds);
+        width = CGRectGetWidth(bounds);
 
-    [_titleField setFrame:_CGRectMake(20.0, 0, width - 40.0, [self toolbarOffset].height)];
+    [_titleField setFrame:CGRectMake(20.0, 0, width - 40.0, [self toolbarOffset].height)];
 
     var maxY = [self toolbarMaxY];
     if ([_titleField isHidden])
         maxY -= ([self toolbarOffset]).height;
 
-    var contentRect = _CGRectMake(0.0, maxY, width, _CGRectGetHeight(bounds) - maxY);
+    var contentRect = CGRectMake(0.0, maxY, width, CGRectGetHeight(bounds) - maxY);
 
     [[theWindow contentView] setFrame:contentRect];
 }
 
-- (void)_enableSheet:(BOOL)enable
+- (void)_enableSheet:(BOOL)enable inWindow:(CPWindow)parentWindow
 {
-    [super _enableSheet:enable];
+    // No need to call super, it just deals with the shadow view, which we don't want
 
     [_closeButton setHidden:enable];
     [_titleField setHidden:enable];
@@ -204,15 +164,30 @@ var HUD_TITLEBAR_HEIGHT             = 26.0;
     if (enable)
         dy = -dy;
 
-    var newHeight = _CGRectGetMaxY(frame) + dy,
-        newWidth = _CGRectGetMaxX(frame);
+    var newHeight = CGRectGetMaxY(frame) + dy,
+        newWidth = CGRectGetMaxX(frame);
 
     frame.size.height += dy;
 
-    [self setFrameSize:_CGSizeMake(newWidth, newHeight)];
+    [self setFrameSize:CGSizeMake(newWidth, newHeight)];
     [self tile];
     [theWindow setFrame:frame display:NO animate:NO];
     [theWindow setMovableByWindowBackground:!enable];
+
+    [self setNeedsLayout];
+}
+
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+
+    if (_styleMask & CPClosableWindowMask)
+    {
+        [_closeButton setFrameOrigin:[self valueForThemeAttribute:@"close-image-origin"]];
+        [_closeButton setFrameSize:[self valueForThemeAttribute:@"close-image-size"]]
+        [_closeButton setImage:[self valueForThemeAttribute:@"close-image"]];
+        [_closeButton setAlternateImage:[self valueForThemeAttribute:@"close-active-image"]];
+    }
 }
 
 @end

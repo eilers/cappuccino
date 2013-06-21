@@ -45,9 +45,6 @@
             CPLog.debug("NSColorWell: adjusting height from %d to %d", frameSize.height, 24.0);
             frameSize.height = 24.0;
             [self setFrameSize:frameSize];
-
-            // Adjust for differences between Cocoa and Cappuccino widget framing.
-            _frame.origin.x -= 3;
         }
     }
 
@@ -62,7 +59,15 @@
 
 - (id)initWithCoder:(CPCoder)aCoder
 {
-    return [self NS_initWithCoder:aCoder];
+    self = [self NS_initWithCoder:aCoder];
+
+    if (self)
+    {
+        var cell = [aCoder decodeObjectForKey:@"NSCell"];
+        [self NS_initWithCell:cell];
+    }
+
+    return self;
 }
 
 - (Class)classForKeyedArchiver

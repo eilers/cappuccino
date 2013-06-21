@@ -25,7 +25,9 @@
 @import "CPException.j"
 @import "CPNull.j"
 @import "CPObject.j"
-#import "Ref.h"
+
+//FIXME: After release of 0.9.7 remove below variable
+var CPDictionaryShowNilDeprecationMessage = YES;
 
 /* @ignore */
 @implementation _CPDictionaryValueEnumerator : CPEnumerator
@@ -254,14 +256,43 @@
     self = [super init];
 
     if ([objects count] != [keyArray count])
-        [CPException raise:CPInvalidArgumentException reason:"Counts are different.(" + [objects count] + "!=" + [keyArray count] + ")"];
+        [CPException raise:CPInvalidArgumentException reason:[CPString stringWithFormat:@"Counts are different.(%d != %d)", [objects count], [keyArray count]]];
 
     if (self)
     {
         var i = [keyArray count];
 
         while (i--)
-            [self setObject:objects[i] forKey:keyArray[i]];
+        {
+            var value = objects[i],
+                key = keyArray[i];
+
+            if (value === nil)
+            {
+                CPDictionaryShowNilDeprecationMessage = NO;
+                CPLog.warn([CPString stringWithFormat:@"[%s %s] DEPRECATED: Attempt to insert nil object from objects[%d]", [self className], _cmd, i]);
+
+                if (typeof(objj_backtrace_print) === "function")
+                    objj_backtrace_print(CPLog.warn);
+
+                // FIXME: After release of 0.9.7 change this block to:
+                // [CPException raise:CPInvalidArgumentException reason:@"Attempt to insert nil object from objects[" + i + @"]"];
+            }
+
+            if (key === nil)
+            {
+                CPDictionaryShowNilDeprecationMessage = NO;
+                CPLog.warn([CPString stringWithFormat:@"[%s %s] DEPRECATED: Attempt to insert nil key from keys[%d]", [self className], _cmd, i]);
+
+                if (typeof(objj_backtrace_print) === "function")
+                    objj_backtrace_print(CPLog.warn);
+
+                // FIXME: After release of 0.9.7 change this block to:
+                // [CPException raise:CPInvalidArgumentException reason:@"Attempt to insert nil key from keys[" + i + @"]"];
+            }
+
+            [self setObject:value forKey:key];
+        }
     }
 
     return self;
@@ -297,12 +328,34 @@
 
         for (; index < argCount; index += 2)
         {
-            var value = arguments[index];
+            var value = arguments[index],
+                key = arguments[index + 1];
 
             if (value === nil)
-                break;
+            {
+                CPDictionaryShowNilDeprecationMessage = NO;
+                CPLog.warn([CPString stringWithFormat:@"[%s %s] DEPRECATED: Attempt to insert nil object from objects[%d]", [self className], _cmd, (index / 2) - 1]);
 
-            [self setObject:value forKey:arguments[index + 1]];
+                if (typeof(objj_backtrace_print) === "function")
+                    objj_backtrace_print(CPLog.warn);
+
+                // FIXME: After release of 0.9.7 change 3 lines above to this:
+                // [CPException raise:CPInvalidArgumentException reason:@"Attempt to insert nil object from objects[" + ((index / 2) - 1) + @"]"];
+            }
+
+            if (key === nil)
+            {
+                CPDictionaryShowNilDeprecationMessage = NO;
+                CPLog.warn([CPString stringWithFormat:@"[%s %s] DEPRECATED: Attempt to insert nil key from keys[%d]", [self className], _cmd, (index / 2) - 1]);
+
+                if (typeof(objj_backtrace_print) === "function")
+                    objj_backtrace_print(CPLog.warn);
+
+                // FIXME: After release of 0.9.7 change 3 lines above to this:
+                // [CPException raise:CPInvalidArgumentException reason:@"Attempt to insert nil key from keys[" + ((index / 2) - 1) + @"]"];
+            }
+
+            [self setObject:value forKey:key];
         }
     }
 
@@ -322,7 +375,7 @@
 */
 - (int)count
 {
-    return _count;
+    return self._count;
 }
 
 /*!
@@ -330,7 +383,7 @@
 */
 - (CPArray)allKeys
 {
-    return [_keys copy];
+    return [self._keys copy];
 }
 
 /*!
@@ -338,11 +391,12 @@
 */
 - (CPArray)allValues
 {
-    var index = _keys.length,
+    var keys = self._keys,
+        index = keys.length,
         values = [];
 
     while (index--)
-        values.push(self.valueForKey(_keys[index]));
+        values.push(self.valueForKey(keys[index]));
 
     return values;
 }
@@ -357,7 +411,8 @@
 */
 - (CPArray)allKeysForObject:(id)anObject
 {
-    var count = _keys.length,
+    var keys = self._keys,
+        count = keys.length,
         index = 0,
         matchingKeys = [],
         key = nil,
@@ -365,8 +420,8 @@
 
     for (; index < count; ++index)
     {
-        key = _keys[index];
-        value = _buckets[key];
+        key = keys[index];
+        value = self._buckets[key];
 
         if (value.isa && anObject && anObject.isa && [value respondsToSelector:@selector(isEqual:)] && [value isEqual:anObject])
             matchingKeys.push(key);
@@ -384,16 +439,18 @@
 
 - (CPArray)keysOfEntriesWithOptions:(CPEnumerationOptions)options passingTest:(Function /*(id key, id obj, @ref BOOL stop)*/)predicate
 {
+    var keys = self._keys;
+
     if (options & CPEnumerationReverse)
     {
-        var index = [_keys count] - 1,
+        var index = [keys count] - 1,
             stop = -1,
             increment = -1;
     }
     else
     {
         var index = 0,
-            stop = [_keys count],
+            stop = [keys count],
             increment = 1;
     }
 
@@ -401,12 +458,12 @@
         key = nil,
         value = nil,
         shouldStop = NO,
-        stopRef = AT_REF(shouldStop);
+        stopRef = @ref(shouldStop);
 
     for (; index !== stop; index += increment)
     {
-        key = _keys[index];
-        value = _buckets[key];
+        key = keys[index];
+        value = self._buckets[key];
 
         if (predicate(key, value, stopRef))
             matchingKeys.push(key);
@@ -447,7 +504,7 @@
 */
 - (CPEnumerator)keyEnumerator
 {
-    return [_keys objectEnumerator];
+    return [self._keys objectEnumerator];
 }
 
 /*!
@@ -471,12 +528,13 @@
     if (count !== [aDictionary count])
         return NO;
 
-    var index = count;
+    var index = count,
+        keys = self._keys;
 
     while (index--)
     {
-        var currentKey = _keys[index],
-            lhsObject = _buckets[currentKey],
+        var currentKey = keys[index],
+            lhsObject = self._buckets[currentKey],
             rhsObject = aDictionary._buckets[currentKey];
 
         if (lhsObject === rhsObject)
@@ -532,7 +590,7 @@
 */
 - (id)objectForKey:(id)aKey
 {
-    var object = _buckets[aKey];
+    var object = self._buckets[aKey];
 
     return (object === undefined) ? nil : object;
 }
@@ -606,6 +664,35 @@
 */
 - (void)setObject:(id)anObject forKey:(id)aKey
 {
+    // FIXME: After release of 0.9.7, remove this test and leave the contents of its block
+    if (CPDictionaryShowNilDeprecationMessage)
+    {
+        if (aKey === nil)
+        {
+            CPLog.warn([CPString stringWithFormat:@"[%s %s] DEPRECATED: key cannot be nil", [self className], _cmd]);
+
+            if (typeof(objj_backtrace_print) === "function")
+                objj_backtrace_print(CPLog.warn);
+
+            // FIXME: After release of 0.9.7 change this block to:
+            // [CPException raise:CPInvalidArgumentException reason:@"key cannot be nil"];
+        }
+
+        if (anObject === nil)
+        {
+            CPLog.warn([CPString stringWithFormat:@"[%s %s] DEPRECATED: object cannot be nil (key: %s)", [self className], _cmd, aKey]);
+
+            if (typeof(objj_backtrace_print) === "function")
+                objj_backtrace_print(CPLog.warn);
+
+            // FIXME: After release of 0.9.7 change this block to:
+            // [CPException raise:CPInvalidArgumentException reason:@"object cannot be nil (key: " + aKey + @")"];
+        }
+    }
+    // FIXME: After release of 0.9.7 remove 2 lines below.
+    else
+        CPDictionaryShowNilDeprecationMessage = YES;
+
     self.setValueForKey(aKey, anObject);
 }
 
@@ -633,17 +720,20 @@
 */
 - (CPString)description
 {
-    var string = "@{\n",
-        keys = _keys,
+    var string = "@{",
+        keys = self._keys,
         index = 0,
-        count = _count;
+        count = self._count;
 
     for (; index < count; ++index)
     {
-        var key = keys[index],
-            value = valueForKey(key);
+        if (index === 0)
+            string += "\n";
 
-        string += "\t" + key + ": " + CPDescriptionOfObject(value).split('\n').join("\n\t") + ",\n";
+        var key = keys[index],
+            value = self.valueForKey(key);
+
+        string += "    @\"" + key + "\": " + CPDescriptionOfObject(value).split("\n").join("\n    ") + (index + 1 < count ? "," : "") + "\n";
     }
 
     return string + "}";
@@ -658,12 +748,14 @@
 - (void)enumerateKeysAndObjectsUsingBlock:(Function /*(id aKey, id anObject, @ref BOOL stop)*/)aFunction
 {
     var shouldStop = NO,
-        shouldStopRef = AT_REF(shouldStop);
+        shouldStopRef = @ref(shouldStop),
+        keys = self._keys,
+        count = self._count;
 
-    for (var index = 0; index < _count; index++)
+    for (var index = 0; index < count; index++)
     {
-        var key = _keys[index],
-            value = valueForKey(key);
+        var key = keys[index],
+            value = self.valueForKey(key);
 
         aFunction(key, value, shouldStopRef);
 

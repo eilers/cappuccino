@@ -25,29 +25,33 @@
 @import <Foundation/CPString.j>
 
 @import "CPImage.j"
-@import "CPMenu.j"
+@import "CPText.j"
 @import "CPView.j"
 @import "_CPMenuItemView.j"
 
+@class CPMenu
 
-var CPMenuItemStringRepresentationDictionary = [CPDictionary dictionary];
-[CPMenuItemStringRepresentationDictionary setObject:"\u238B" forKey:CPEscapeFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u21E5" forKey:CPTabCharacter];
-[CPMenuItemStringRepresentationDictionary setObject:"\u21E4" forKey:CPBackTabCharacter];
-[CPMenuItemStringRepresentationDictionary setObject:"\u2423" forKey:CPSpaceFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u23CE" forKey:CPCarriageReturnCharacter];
-[CPMenuItemStringRepresentationDictionary setObject:"\u232B" forKey:CPBackspaceCharacter];
-[CPMenuItemStringRepresentationDictionary setObject:"\u232B" forKey:CPDeleteFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u2326" forKey:CPDeleteCharacter];
-[CPMenuItemStringRepresentationDictionary setObject:"\u21F1" forKey:CPHomeFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u21F2" forKey:CPEndFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u21DE" forKey:CPPageUpFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u21DF" forKey:CPPageDownFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u2191" forKey:CPUpArrowFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u2193" forKey:CPDownArrowFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u2190" forKey:CPLeftArrowFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u2192" forKey:CPRightArrowFunctionKey];
-[CPMenuItemStringRepresentationDictionary setObject:"\u2327" forKey:CPClearDisplayFunctionKey];
+@global CPApp
+
+var CPMenuItemStringRepresentationDictionary = @{
+        CPEscapeFunctionKey:        "\u238B",
+        CPTabCharacter:             "\u21E5",
+        CPBackTabCharacter:         "\u21E4",
+        CPSpaceFunctionKey:         "\u2423",
+        CPCarriageReturnCharacter:  "\u23CE",
+        CPBackspaceCharacter:       "\u232B",
+        CPDeleteFunctionKey:        "\u232B",
+        CPDeleteCharacter:          "\u2326",
+        CPHomeFunctionKey:          "\u21F1",
+        CPEndFunctionKey:           "\u21F2",
+        CPPageUpFunctionKey:        "\u21DE",
+        CPPageDownFunctionKey:      "\u21DF",
+        CPUpArrowFunctionKey:       "\u2191",
+        CPDownArrowFunctionKey:     "\u2193",
+        CPLeftArrowFunctionKey:     "\u2190",
+        CPRightArrowFunctionKey:    "\u2192",
+        CPClearDisplayFunctionKey:  "\u2327",
+    };
 
 /*!
     @ingroup appkit
@@ -99,6 +103,16 @@ var CPMenuItemStringRepresentationDictionary = [CPDictionary dictionary];
     int             _changeCount;
 
     _CPMenuItemView _menuItemView;
+}
+
++ (Class)_binderClassForBinding:(CPString)aBinding
+{
+    if ([aBinding hasPrefix:CPEnabledBinding])
+        return [CPMultipleValueAndBinding class];
+    else if (aBinding === CPTargetBinding || [aBinding hasPrefix:CPArgumentBinding])
+        return [CPActionBinding class];
+
+    return [super _binderClassForBinding:aBinding];
 }
 
 - (id)init

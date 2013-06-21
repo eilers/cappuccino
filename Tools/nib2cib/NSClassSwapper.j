@@ -20,7 +20,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-@import "Converter.j"
+@import <Foundation/CPObject.j>
+@import <Foundation/CPString.j>
+@import <AppKit/_CPCibClassSwapper.j>
+
+@class Nib2Cib
+
+@global CP_NSMapClassName
 
 var NSClassSwapperClassNames                = {},
     NSClassSwapperOriginalClassNames        = {};
@@ -42,7 +48,7 @@ var _CPCibClassSwapperClassNameKey          = @"_CPCibClassSwapperClassNameKey",
         // If this is a userland NS class, call its KVC methods directly
         var nsClass = nil;
 
-        if ([[[Converter sharedConverter] userNSClasses] containsObject:aClassName])
+        if ([[[Nib2Cib sharedNib2Cib] userNSClasses] containsObject:aClassName])
             nsClass = objj_lookUpClass("NS_" + aClassName);
 
         var originalClass = nsClass || objj_lookUpClass(anOriginalClassName);

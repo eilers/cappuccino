@@ -20,13 +20,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#import "../Foundation/Ref.h"
+@import <Foundation/CPFormatter.j>
+@import <Foundation/CPTimer.j>
 
-@import "../Foundation/CPFormatter.j"
 @import "CPFont.j"
 @import "CPShadow.j"
 @import "CPView.j"
 @import "CPKeyValueBinding.j"
+
+@global CPApp
 
 CPLeftTextAlignment      = 0;
 CPRightTextAlignment     = 1;
@@ -108,28 +110,19 @@ var CPControlBlackColor = [CPColor blackColor];
 
 + (CPDictionary)themeAttributes
 {
-    return [CPDictionary dictionaryWithObjects:[CPLeftTextAlignment,
-                                                CPTopVerticalTextAlignment,
-                                                CPLineBreakByClipping,
-                                                [CPColor blackColor],
-                                                [CPFont systemFontOfSize:CPFontCurrentSystemSize],
-                                                [CPNull null],
-                                                _CGSizeMakeZero(),
-                                                CPImageLeft,
-                                                CPScaleToFit,
-                                                _CGSizeMakeZero(),
-                                                _CGSizeMake(-1.0, -1.0)]
-                                       forKeys:[@"alignment",
-                                                @"vertical-alignment",
-                                                @"line-break-mode",
-                                                @"text-color",
-                                                @"font",
-                                                @"text-shadow-color",
-                                                @"text-shadow-offset",
-                                                @"image-position",
-                                                @"image-scaling",
-                                                @"min-size",
-                                                @"max-size"]];
+    return @{
+            @"alignment": CPLeftTextAlignment,
+            @"vertical-alignment": CPTopVerticalTextAlignment,
+            @"line-break-mode": CPLineBreakByClipping,
+            @"text-color": [CPColor blackColor],
+            @"font": [CPFont systemFontOfSize:CPFontCurrentSystemSize],
+            @"text-shadow-color": [CPNull null],
+            @"text-shadow-offset": CGSizeMakeZero(),
+            @"image-position": CPImageLeft,
+            @"image-scaling": CPScaleToFit,
+            @"min-size": CGSizeMakeZero(),
+            @"max-size": CGSizeMake(-1.0, -1.0),
+        };
 }
 
 + (void)initialize
@@ -148,12 +141,14 @@ var CPControlBlackColor = [CPColor blackColor];
     [self exposeBinding:@"enabled"];
 }
 
-+ (Class)_binderClassForBinding:(CPString)theBinding
++ (Class)_binderClassForBinding:(CPString)aBinding
 {
-    if (theBinding === CPValueBinding)
+    if (aBinding === CPValueBinding)
         return [_CPValueBinder class];
+    else if ([aBinding hasPrefix:CPEnabledBinding])
+        return [CPMultipleValueAndBinding class];
 
-    return [super _binderClassForBinding:theBinding];
+    return [super _binderClassForBinding:aBinding];
 }
 
 /*!
@@ -234,6 +229,9 @@ var CPControlBlackColor = [CPColor blackColor];
 - (BOOL)sendAction:(SEL)anAction to:(id)anObject
 {
     [self _reverseSetBinding];
+
+    var binding = [CPBinder getBinding:CPTargetBinding forObject:self];
+    [binding invokeAction];
 
     return [CPApp sendAction:anAction to:anObject from:self];
 }
@@ -397,6 +395,14 @@ var CPControlBlackColor = [CPColor blackColor];
         [self highlight:YES];
 }
 
+/*!
+    Enabled controls accept first mouse by default.
+*/
+- (BOOL)acceptsFirstMouse:(CPEvent)anEvent
+{
+    return [self isEnabled];
+}
+
 - (void)mouseDown:(CPEvent)anEvent
 {
     if (![self isEnabled])
@@ -545,10 +551,10 @@ var CPControlBlackColor = [CPColor blackColor];
     {
         value = nil;
 
-        if ([_formatter getObjectValue:AT_REF(value) forString:aString errorDescription:nil] === NO)
+        if ([_formatter getObjectValue:@ref(value) forString:aString errorDescription:nil] === NO)
         {
             // If the given string is non-empty and doesn't work, Cocoa tries an empty string.
-            if (!aString || [_formatter getObjectValue:AT_REF(value) forString:@"" errorDescription:nil] === NO)
+            if (!aString || [_formatter getObjectValue:@ref(value) forString:@"" errorDescription:nil] === NO)
                 value = undefined;  // Means the value is invalid
         }
     }
@@ -601,7 +607,7 @@ var CPControlBlackColor = [CPColor blackColor];
     if ([note object] != self)
         return;
 
-    [[CPNotificationCenter defaultCenter] postNotificationName:CPControlTextDidBeginEditingNotification object:self userInfo:[CPDictionary dictionaryWithObject:[note object] forKey:"CPFieldEditor"]];
+    [[CPNotificationCenter defaultCenter] postNotificationName:CPControlTextDidBeginEditingNotification object:self userInfo:@{ "CPFieldEditor": [note object] }];
 }
 
 - (void)textDidChange:(CPNotification)note
@@ -610,7 +616,7 @@ var CPControlBlackColor = [CPColor blackColor];
     if ([note object] != self)
         return;
 
-    [[CPNotificationCenter defaultCenter] postNotificationName:CPControlTextDidChangeNotification object:self userInfo:[CPDictionary dictionaryWithObject:[note object] forKey:"CPFieldEditor"]];
+    [[CPNotificationCenter defaultCenter] postNotificationName:CPControlTextDidChangeNotification object:self userInfo:@{ "CPFieldEditor": [note object] }];
 }
 
 - (void)textDidEndEditing:(CPNotification)note
@@ -621,7 +627,7 @@ var CPControlBlackColor = [CPColor blackColor];
 
     [self _reverseSetBinding];
 
-    [[CPNotificationCenter defaultCenter] postNotificationName:CPControlTextDidEndEditingNotification object:self userInfo:[CPDictionary dictionaryWithObject:[note object] forKey:"CPFieldEditor"]];
+    [[CPNotificationCenter defaultCenter] postNotificationName:CPControlTextDidEndEditingNotification object:self userInfo:@{ "CPFieldEditor": [note object] }];
 }
 
 /*!

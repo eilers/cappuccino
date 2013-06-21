@@ -24,6 +24,8 @@
 
 @import "CPFont.j"
 
+@global CPApp
+
 CPItalicFontMask                    = 1 << 0;
 CPBoldFontMask                      = 1 << 1;
 CPUnboldFontMask                    = 1 << 2;
@@ -54,7 +56,7 @@ var CPSharedFontManager     = nil,
     id              _delegate @accessors(property=delegate);
 
     CPFont          _selectedFont;
-    BOOL            _multiple @accessors;
+    BOOL            _multiple @accessors(getter=isMultiple, setter=setMultiple:);
 
     CPDictionary    _activeChange;
 }
@@ -99,6 +101,9 @@ var CPSharedFontManager     = nil,
 {
     if (!_availableFonts)
     {
+        _availableFonts = [];
+
+#if PLATFORM(DOM)
         _CPFontDetectSpan = document.createElement("span");
         _CPFontDetectSpan.fontSize = "24px";
         _CPFontDetectSpan.appendChild(document.createTextNode("mmmmmmmmmml"));
@@ -110,13 +115,16 @@ var CPSharedFontManager     = nil,
 
         _CPFontDetectReferenceFonts = _CPFontDetectPickTwoDifferentFonts(["monospace", "serif", "sans-serif", "cursive"]);
 
-        _availableFonts = [];
         for (var i = 0; i < _CPFontDetectAllFonts.length; i++)
         {
             var available = _CPFontDetectFontAvailable(_CPFontDetectAllFonts[i]);
             if (available)
                 _availableFonts.push(_CPFontDetectAllFonts[i]);
         }
+#else
+        // If there's no font detection, just assume all fonts are available.
+        _availableFonts = _CPFontDetectAllFonts;
+#endif
     }
     return _availableFonts;
 }
@@ -133,7 +141,7 @@ var CPSharedFontManager     = nil,
 - (void)setSelectedFont:(CPFont)aFont isMultiple:(BOOL)aFlag
 {
     _selectedFont = aFont;
-    _isMultiple = aFlag;
+    _multiple = aFlag;
 
     // TODO Notify CPFontPanel when it exists.
 }
@@ -141,11 +149,6 @@ var CPSharedFontManager     = nil,
 - (CPFont)selectedFont
 {
     return _selectedFont;
-}
-
-- (BOOL)isMultiple
-{
-    return _isMultiple;
 }
 
 - (int)weightOfFont:(CPFont)aFont
@@ -205,7 +208,8 @@ var CPSharedFontManager     = nil,
 
 - (@action)addFontTrait:(id)sender
 {
-    _activeChange = [CPDictionary dictionaryWithObject:[sender tag] forKey:@"addTraits"];
+    var tag = [sender tag];
+    _activeChange = tag === nil ? @{} : @{ @"addTraits": tag };
 
     [self sendAction];
 }

@@ -109,28 +109,36 @@
 
 @import <Foundation/CPObject.j>
 @import <Foundation/CPRunLoop.j>
+@import <Foundation/CPSet.j>
+@import <Foundation/CPTimer.j>
 
-@import "CPEvent.j"
-@import "CPText.j"
+@import "CPCursor.j"
 @import "CPCompatibility.j"
 @import "CPDOMWindowLayer.j"
-
+@import "CPDragServer_Constants.j"
+@import "CPEvent.j"
+@import "CPPasteboard.j"
 @import "CPPlatform.j"
 @import "CPPlatformWindow.j"
 @import "CPPlatformWindow+DOMKeys.j"
+@import "CPText.j"
+@import "CPWindow_Constants.j"
+
+@class CPDragServer
+@class _CPToolTip
+
+@global CPApp
+@global _CPRunModalLoop
 
 // List of all open native windows
 var PlatformWindows = [CPSet set];
 
-// Define up here so compressor knows about em.
+// Define up here so compressor knows about them.
 var CPDOMEventGetClickCount,
     CPDOMEventStop,
     StopDOMEventPropagation,
     StopContextMenuDOMEventPropagation;
 
-//right now we hard code q, w, r and t as keys to propogate
-//these aren't normal keycodes, they are with modifier key codes
-//might be mac only, we should investigate futher later.
 var KeyCodesToPrevent = {},
     CharacterKeysToPrevent = {},
     KeyCodesToAllow = {},
@@ -192,6 +200,7 @@ var ModifierKeyCodes = [
 
 var resizeTimer = nil;
 
+#if PLATFORM(DOM)
 @implementation CPPlatformWindow (DOM)
 
 - (id)_init
@@ -201,11 +210,10 @@ var resizeTimer = nil;
     if (self)
     {
         _DOMWindow = window;
-        _contentRect = _CGRectMakeZero();
+        _contentRect = CGRectMakeZero();
 
         _windowLevels = [];
-        _windowLayers = [CPDictionary dictionary];
-
+        _windowLayers = @{};
 
         [self registerDOMWindow];
         [self updateFromNativeContentRect];
@@ -224,25 +232,25 @@ var resizeTimer = nil;
     if (_DOMWindow.cpFrame)
         return _DOMWindow.cpFrame();
 
-    var contentRect = _CGRectMakeZero();
+    var contentRect = CGRectMakeZero();
 
     if (window.screenTop)
-        contentRect.origin = _CGPointMake(_DOMWindow.screenLeft, _DOMWindow.screenTop);
+        contentRect.origin = CGPointMake(_DOMWindow.screenLeft, _DOMWindow.screenTop);
 
     else if (window.screenX)
-        contentRect.origin = _CGPointMake(_DOMWindow.screenX, _DOMWindow.screenY);
+        contentRect.origin = CGPointMake(_DOMWindow.screenX, _DOMWindow.screenY);
 
     // Safari, Mozilla, Firefox, and Opera
     if (_DOMWindow.innerWidth)
-        contentRect.size = _CGSizeMake(_DOMWindow.innerWidth, _DOMWindow.innerHeight);
+        contentRect.size = CGSizeMake(_DOMWindow.innerWidth, _DOMWindow.innerHeight);
 
     // Internet Explorer 6 in Strict Mode
     else if (document.documentElement && document.documentElement.clientWidth)
-        contentRect.size = _CGSizeMake(_DOMWindow.document.documentElement.clientWidth, _DOMWindow.document.documentElement.clientHeight);
+        contentRect.size = CGSizeMake(_DOMWindow.document.documentElement.clientWidth, _DOMWindow.document.documentElement.clientHeight);
 
     // Internet Explorer X
     else
-        contentRect.size = _CGSizeMake(_DOMWindow.document.body.clientWidth, _DOMWindow.document.body.clientHeight);
+        contentRect.size = CGSizeMake(_DOMWindow.document.body.clientWidth, _DOMWindow.document.body.clientHeight);
 
     return contentRect;
 }
@@ -272,7 +280,7 @@ var resizeTimer = nil;
     }
 }
 
-- (void)orderBack:(id)aSender
+- (void)orderBack:(CPWindow)aWindow
 {
     if (_DOMWindow)
         _DOMWindow.blur();
@@ -306,7 +314,8 @@ var resizeTimer = nil;
     // Make sure the pastboard element is blurred.
     _DOMPasteboardElement.blur();
 
-    // Create a full screen div to protect against iframes and other elements from consuming events during tracking
+    // Create a full screen div to protect against iframes and other elements
+    // from consuming events during tracking
     // FIXME: multiple windows
     _DOMEventGuard = theDocument.createElement("div");
     _DOMEventGuard.style.position = "absolute";
@@ -426,6 +435,7 @@ var resizeTimer = nil;
         theDocument.addEventListener("touchcancel", touchEventCallback, NO);
 
         _DOMWindow.addEventListener("DOMMouseScroll", scrollEventCallback, NO);
+        _DOMWindow.addEventListener("wheel", scrollEventCallback, NO);
         _DOMWindow.addEventListener("mousewheel", scrollEventCallback, NO);
 
         _DOMWindow.addEventListener("resize", resizeEventCallback, NO);
@@ -456,6 +466,7 @@ var resizeTimer = nil;
 
             //FIXME: does firefox really need a different value?
             _DOMWindow.removeEventListener("DOMMouseScroll", scrollEventCallback, NO);
+            _DOMWindow.removeEventListener("wheel", scrollEventCallback, NO);
             _DOMWindow.removeEventListener("mousewheel", scrollEventCallback, NO);
 
             //_DOMWindow.removeEventListener("beforeunload", this, NO);
@@ -529,18 +540,22 @@ var resizeTimer = nil;
         return PlatformWindows;
 }
 
-- (void)orderFront:(id)aSender
+- (void)orderFront:(CPWindow)aWindow
 {
+    if ([aWindow parentWindow])
+        return;
+
     if (_DOMWindow)
         return _DOMWindow.focus();
 
-    _DOMWindow = window.open("about:blank", "_blank", "menubar=no,location=no,resizable=yes,scrollbars=no,status=no,left=" + _CGRectGetMinX(_contentRect) + ",top=" + _CGRectGetMinY(_contentRect) + ",width=" + _CGRectGetWidth(_contentRect) + ",height=" + _CGRectGetHeight(_contentRect));
+    _DOMWindow = window.open("about:blank", "_blank", "menubar=no,location=no,resizable=yes,scrollbars=no,status=no,left=" + CGRectGetMinX(_contentRect) + ",top=" + CGRectGetMinY(_contentRect) + ",width=" + CGRectGetWidth(_contentRect) + ",height=" + CGRectGetHeight(_contentRect));
 
     [PlatformWindows addObject:self];
 
     // FIXME: cpSetFrame?
-    _DOMWindow.document.write("<!DOCTYPE html><html lang='en'><head></head><body style='background-color:transparent;'></body></html>");
+    _DOMWindow.document.write('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"></head><body style="background-color:transparent;"></body></html>');
     _DOMWindow.document.close();
+
     if (self != [CPPlatformWindow primaryPlatformWindow])
         _DOMWindow.document.title = _title;
 
@@ -558,7 +573,7 @@ var resizeTimer = nil;
     _DOMBodyElement.style.cursor = [[CPCursor currentCursor] _cssString];
 }
 
-- (void)orderOut:(id)aSender
+- (void)orderOut:(CPWindow)aWindow
 {
     if (!_DOMWindow)
         return;
@@ -570,7 +585,7 @@ var resizeTimer = nil;
 {
     var type = aDOMEvent.type,
         dragServer = [CPDragServer sharedDragServer],
-        location = _CGPointMake(aDOMEvent.clientX, aDOMEvent.clientY),
+        location = CGPointMake(aDOMEvent.clientX, aDOMEvent.clientY),
         pasteboard = [_CPDOMDataTransferPasteboard DOMDataTransferPasteboard];
 
     [pasteboard _setDataTransfer:aDOMEvent.dataTransfer];
@@ -585,8 +600,8 @@ var resizeTimer = nil;
             draggedWindowFrame = [draggedWindow frame],
             DOMDragElement = draggedWindow._DOMElement;
 
-        DOMDragElement.style.left = -_CGRectGetWidth(draggedWindowFrame) + "px";
-        DOMDragElement.style.top = -_CGRectGetHeight(draggedWindowFrame) + "px";
+        DOMDragElement.style.left = -CGRectGetWidth(draggedWindowFrame) + "px";
+        DOMDragElement.style.top = -CGRectGetHeight(draggedWindowFrame) + "px";
 
         var parentNode = DOMDragElement.parentNode;
 
@@ -600,7 +615,7 @@ var resizeTimer = nil;
         aDOMEvent.dataTransfer.setDragImage(DOMDragElement, draggingOffset.width, draggingOffset.height);
         aDOMEvent.dataTransfer.effectAllowed = "all";
 
-        [dragServer draggingStartedInPlatformWindow:self globalLocation:[CPPlatform isBrowser] ? location : _CGPointMake(aDOMEvent.screenX, aDOMEvent.screenY)];
+        [dragServer draggingStartedInPlatformWindow:self globalLocation:[CPPlatform isBrowser] ? location : CGPointMake(aDOMEvent.screenX, aDOMEvent.screenY)];
     }
     else if (type === "drag")
     {
@@ -609,7 +624,7 @@ var resizeTimer = nil;
         if (CPFeatureIsCompatible(CPHTML5DragAndDropSourceYOffBy1))
             y -= 1;
 
-        [dragServer draggingSourceUpdatedWithGlobalLocation:[CPPlatform isBrowser] ? location : _CGPointMake(aDOMEvent.screenX, y)];
+        [dragServer draggingSourceUpdatedWithGlobalLocation:[CPPlatform isBrowser] ? location : CGPointMake(aDOMEvent.screenX, y)];
     }
     else if (type === "dragover" || type === "dragleave")
     {
@@ -641,7 +656,7 @@ var resizeTimer = nil;
         else
             dragOperation = CPDragOperationNone;
 
-        [dragServer draggingEndedInPlatformWindow:self globalLocation:[CPPlatform isBrowser] ? location : _CGPointMake(aDOMEvent.screenX, aDOMEvent.screenY) operation:dragOperation];
+        [dragServer draggingEndedInPlatformWindow:self globalLocation:[CPPlatform isBrowser] ? location : CGPointMake(aDOMEvent.screenX, aDOMEvent.screenY) operation:dragOperation];
     }
     else //if (type === "drop")
     {
@@ -661,6 +676,7 @@ var resizeTimer = nil;
 - (void)keyEvent:(DOMEvent)aDOMEvent
 {
     var event,
+        location = _lastMouseEventLocation || CGPointMakeZero(),
         timestamp = [CPEvent currentTimestamp],
         sourceElement = aDOMEvent.target || aDOMEvent.srcElement,
         windowNumber = [[CPApp keyWindow] windowNumber],
@@ -695,157 +711,160 @@ var resizeTimer = nil;
 
     var isNativePasteEvent = NO,
         isNativeCopyOrCutEvent = NO,
-        overrideCharacters = nil;
+        overrideCharacters = nil,
+        charactersIgnoringModifiers = @"";
 
     switch (aDOMEvent.type)
     {
-        case "keydown":     // Grab and store the keycode now since it is correct and consistent at this point.
-                            if (aDOMEvent.keyCode in MozKeyCodeToKeyCodeMap)
-                                _keyCode = MozKeyCodeToKeyCodeMap[aDOMEvent.keyCode];
-                            else
-                                _keyCode = aDOMEvent.keyCode;
+        case "keydown":
+            // Grab and store the keycode now since it is correct and consistent at this point.
+            if (aDOMEvent.keyCode in MozKeyCodeToKeyCodeMap)
+                _keyCode = MozKeyCodeToKeyCodeMap[aDOMEvent.keyCode];
+            else
+                _keyCode = aDOMEvent.keyCode;
 
-                            var characters;
+            var characters;
 
-                            // Handle key codes for which String.fromCharCode won't work.
-                            // Refs #1036: In Internet Explorer, both 'which' and 'charCode' are undefined for special keys.
-                            if (aDOMEvent.which === 0 || aDOMEvent.charCode === 0 || (aDOMEvent.which === undefined && aDOMEvent.charCode === undefined))
-                                characters = KeyCodesToUnicodeMap[_keyCode];
+            // Handle key codes for which String.fromCharCode won't work.
+            // Refs #1036: In Internet Explorer, both 'which' and 'charCode' are undefined for special keys.
+            if (aDOMEvent.which === 0 || aDOMEvent.charCode === 0 || (aDOMEvent.which === undefined && aDOMEvent.charCode === undefined))
+                characters = KeyCodesToUnicodeMap[_keyCode];
 
-                            if (!characters)
-                                characters = String.fromCharCode(_keyCode).toLowerCase();
+            if (!characters)
+                characters = String.fromCharCode(_keyCode).toLowerCase();
 
-                            overrideCharacters = (modifierFlags & CPShiftKeyMask || _capsLockActive) ? characters.toUpperCase() : characters;
+            overrideCharacters = (modifierFlags & CPShiftKeyMask || _capsLockActive) ? characters.toUpperCase() : characters;
 
-                            // check for caps lock state
-                            if (_keyCode === CPKeyCodes.CAPS_LOCK)
-                                _capsLockActive = YES;
+            // check for caps lock state
+            if (_keyCode === CPKeyCodes.CAPS_LOCK)
+                _capsLockActive = YES;
 
-                            if ([ModifierKeyCodes containsObject:_keyCode])
-                            {
-                                // A modifier key will never fire keypress. We don't need to do any other processing so we just fire it here and break.
-                                event = [CPEvent keyEventWithType:CPFlagsChanged location:location modifierFlags:modifierFlags
-                                            timestamp:timestamp windowNumber:windowNumber context:nil
-                                            characters:nil charactersIgnoringModifiers:nil isARepeat:NO keyCode:_keyCode];
+            if ([ModifierKeyCodes containsObject:_keyCode])
+            {
+                // A modifier key will never fire keypress. We don't need to do any other processing so we just fire it here and break.
+                event = [CPEvent keyEventWithType:CPFlagsChanged location:location modifierFlags:modifierFlags
+                            timestamp:timestamp windowNumber:windowNumber context:nil
+                            characters:nil charactersIgnoringModifiers:nil isARepeat:NO keyCode:_keyCode];
 
-                                break;
-                            }
-                            else if (modifierFlags & (CPControlKeyMask | CPCommandKeyMask))
-                            {
-                                //we are simply going to skip all keypress events that use cmd/ctrl key
-                                //this lets us be consistent in all browsers and send on the keydown
-                                //which means we can cancel the event early enough, but only if sendEvent needs to
+                break;
+            }
+            else if (modifierFlags & (CPControlKeyMask | CPCommandKeyMask))
+            {
+                //we are simply going to skip all keypress events that use cmd/ctrl key
+                //this lets us be consistent in all browsers and send on the keydown
+                //which means we can cancel the event early enough, but only if sendEvent needs to
 
-                                var eligibleForCopyPaste = [self _validateCopyCutOrPasteEvent:aDOMEvent flags:modifierFlags];
+                var eligibleForCopyPaste = [self _validateCopyCutOrPasteEvent:aDOMEvent flags:modifierFlags];
 
-                                // If this could be a native PASTE event, then we need to further examine it before
-                                // sending a CPEvent.  Select our element to see if anything gets pasted in it.
-                                if (characters === "v" && eligibleForCopyPaste)
-                                {
-                                    if (!_ignoreNativePastePreparation)
-                                    {
-                                        _DOMPasteboardElement.select();
-                                        _DOMPasteboardElement.value = "";
-                                    }
+                // If this could be a native PASTE event, then we need to further examine it before
+                // sending a CPEvent.  Select our element to see if anything gets pasted in it.
+                if (characters === "v" && eligibleForCopyPaste)
+                {
+                    if (!_ignoreNativePastePreparation)
+                    {
+                        _DOMPasteboardElement.select();
+                        _DOMPasteboardElement.value = "";
+                    }
 
-                                    isNativePasteEvent = YES;
-                                }
+                    isNativePasteEvent = YES;
+                }
 
-                                // However, of this could be a native COPY event, we need to let the normal event-process take place so it
-                                // can capture our internal Cappuccino pasteboard.
-                                else if ((characters == "c" || characters == "x") && eligibleForCopyPaste)
-                                {
-                                    isNativeCopyOrCutEvent = YES;
+                // However, of this could be a native COPY event, we need to let the normal event-process take place so it
+                // can capture our internal Cappuccino pasteboard.
+                else if ((characters == "c" || characters == "x") && eligibleForCopyPaste)
+                {
+                    isNativeCopyOrCutEvent = YES;
 
-                                    if (_ignoreNativeCopyOrCutEvent)
-                                        break;
-                                }
-                            }
-                            else if (CPKeyCodes.firesKeyPressEvent(_keyCode, _lastKey, aDOMEvent.shiftKey, aDOMEvent.ctrlKey, aDOMEvent.altKey))
-                            {
-                                // this branch is taken by events which fire keydown, keypress, and keyup.
-                                // this is the only time we'll ALLOW character keys to propagate (needed for text fields)
-                                StopDOMEventPropagation = NO;
-                                break;
-                            }
-                            else
-                            {
-                                //this branch is taken by "remedial" key events
-                                // In this state we continue to keypress and send the CPEvent
-                            }
+                    if (_ignoreNativeCopyOrCutEvent)
+                        break;
+                }
+            }
+            else if (CPKeyCodes.firesKeyPressEvent(_keyCode, _lastKey, aDOMEvent.shiftKey, aDOMEvent.ctrlKey, aDOMEvent.altKey))
+            {
+                // this branch is taken by events which fire keydown, keypress, and keyup.
+                // this is the only time we'll ALLOW character keys to propagate (needed for text fields)
+                StopDOMEventPropagation = NO;
+                break;
+            }
+            else
+            {
+                //this branch is taken by "remedial" key events
+                // In this state we continue to keypress and send the CPEvent
+            }
 
         case "keypress":
-                            // we unconditionally break on keypress events with modifiers,
-                            // because we forced the event to be sent on the keydown
-                            if (aDOMEvent.type === "keypress" && (modifierFlags & (CPControlKeyMask | CPCommandKeyMask)))
-                                break;
+            // we unconditionally break on keypress events with modifiers,
+            // because we forced the event to be sent on the keydown
+            if (aDOMEvent.type === "keypress" && (modifierFlags & (CPControlKeyMask | CPCommandKeyMask)))
+                break;
 
-                            var keyCode = _keyCode,
-                                charCode = aDOMEvent.keyCode || aDOMEvent.charCode,
-                                isARepeat = (_charCodes[keyCode] != nil);
+            var keyCode = _keyCode,
+                charCode = aDOMEvent.keyCode || aDOMEvent.charCode,
+                isARepeat = (_charCodes[keyCode] != nil);
 
-                            _lastKey = keyCode;
-                            _charCodes[keyCode] = charCode;
+            _lastKey = keyCode;
+            _charCodes[keyCode] = charCode;
 
-                            var characters = overrideCharacters;
-                            // Is this a special key?
-                            if (!characters && (aDOMEvent.which === 0 || aDOMEvent.charCode === 0))
-                                characters = KeyCodesToUnicodeMap[charCode];
+            var characters = overrideCharacters;
+            // Is this a special key?
+            if (!characters && (aDOMEvent.which === 0 || aDOMEvent.charCode === 0))
+                characters = KeyCodesToUnicodeMap[charCode];
 
-                            if (!characters)
-                                characters = String.fromCharCode(charCode);
+            if (!characters)
+                characters = String.fromCharCode(charCode);
 
-                            charactersIgnoringModifiers = characters.toLowerCase(); // FIXME: This isn't correct. It SHOULD include Shift.
+            charactersIgnoringModifiers = characters.toLowerCase(); // FIXME: This isn't correct. It SHOULD include Shift.
 
-                            // Safari won't send proper capitalization during cmd-key events
-                            if (!overrideCharacters && (modifierFlags & CPCommandKeyMask) && ((modifierFlags & CPShiftKeyMask) || _capsLockActive))
-                                characters = characters.toUpperCase();
+            // Safari won't send proper capitalization during cmd-key events
+            if (!overrideCharacters && (modifierFlags & CPCommandKeyMask) && ((modifierFlags & CPShiftKeyMask) || _capsLockActive))
+                characters = characters.toUpperCase();
 
-                            event = [CPEvent keyEventWithType:CPKeyDown location:location modifierFlags:modifierFlags
-                                        timestamp:timestamp windowNumber:windowNumber context:nil
-                                        characters:characters charactersIgnoringModifiers:charactersIgnoringModifiers isARepeat:isARepeat keyCode:charCode];
+            event = [CPEvent keyEventWithType:CPKeyDown location:location modifierFlags:modifierFlags
+                        timestamp:timestamp windowNumber:windowNumber context:nil
+                        characters:characters charactersIgnoringModifiers:charactersIgnoringModifiers isARepeat:isARepeat keyCode:charCode];
 
-                            if (isNativePasteEvent)
-                            {
-                                _pasteboardKeyDownEvent = event;
-                                window.setNativeTimeout(function () { [self _checkPasteboardElement] }, 0);
-                            }
+            if (isNativePasteEvent)
+            {
+                _pasteboardKeyDownEvent = event;
+                window.setNativeTimeout(function () { [self _checkPasteboardElement] }, 0);
+            }
 
-                            break;
+            break;
 
-        case "keyup":       var keyCode = aDOMEvent.keyCode,
-                                charCode = _charCodes[keyCode];
+        case "keyup":
+            var keyCode = aDOMEvent.keyCode,
+                charCode = _charCodes[keyCode];
 
-                            _keyCode = -1;
-                            _lastKey = -1;
-                            _charCodes[keyCode] = nil;
-                            _ignoreNativeCopyOrCutEvent = NO;
-                            _ignoreNativePastePreparation = NO;
+            _keyCode = -1;
+            _lastKey = -1;
+            _charCodes[keyCode] = nil;
+            _ignoreNativeCopyOrCutEvent = NO;
+            _ignoreNativePastePreparation = NO;
 
-                            // check for caps lock state
-                            if (keyCode === CPKeyCodes.CAPS_LOCK)
-                                _capsLockActive = NO;
+            // check for caps lock state
+            if (keyCode === CPKeyCodes.CAPS_LOCK)
+                _capsLockActive = NO;
 
-                            if ([ModifierKeyCodes containsObject:keyCode])
-                            {
-                                // A modifier key will never fire keypress. We don't need to do any other processing so we just fire it here and break.
-                                event = [CPEvent keyEventWithType:CPFlagsChanged location:location modifierFlags:modifierFlags
-                                            timestamp:timestamp windowNumber:windowNumber context:nil
-                                            characters:nil charactersIgnoringModifiers:nil isARepeat:NO keyCode:_keyCode];
+            if ([ModifierKeyCodes containsObject:keyCode])
+            {
+                // A modifier key will never fire keypress. We don't need to do any other processing so we just fire it here and break.
+                event = [CPEvent keyEventWithType:CPFlagsChanged location:location modifierFlags:modifierFlags
+                            timestamp:timestamp windowNumber:windowNumber context:nil
+                            characters:nil charactersIgnoringModifiers:nil isARepeat:NO keyCode:_keyCode];
 
-                                break;
-                            }
+                break;
+            }
 
-                            var characters = KeyCodesToUnicodeMap[charCode] || String.fromCharCode(charCode),
-                                charactersIgnoringModifiers = characters.toLowerCase();
+            var characters = KeyCodesToUnicodeMap[charCode] || String.fromCharCode(charCode);
+            charactersIgnoringModifiers = characters.toLowerCase();
 
-                            if (!(modifierFlags & CPShiftKeyMask) && (modifierFlags & CPCommandKeyMask) && !_capsLockActive)
-                                characters = charactersIgnoringModifiers;
+            if (!(modifierFlags & CPShiftKeyMask) && (modifierFlags & CPCommandKeyMask) && !_capsLockActive)
+                characters = charactersIgnoringModifiers;
 
-                            event = [CPEvent keyEventWithType:CPKeyUp location:location modifierFlags:modifierFlags
-                                        timestamp: timestamp windowNumber:windowNumber context:nil
-                                        characters:characters charactersIgnoringModifiers:charactersIgnoringModifiers isARepeat:NO keyCode:keyCode];
-                            break;
+            event = [CPEvent keyEventWithType:CPKeyUp location:location modifierFlags:modifierFlags
+                        timestamp: timestamp windowNumber:windowNumber context:nil
+                        characters:characters charactersIgnoringModifiers:charactersIgnoringModifiers isARepeat:NO keyCode:keyCode];
+            break;
     }
 
     if (event && !isNativePasteEvent)
@@ -877,9 +896,9 @@ var resizeTimer = nil;
             characters = cut ? "x" : "c",
             timestamp = [CPEvent currentTimestamp],  // fake event, might as well use current timestamp
             windowNumber = [[CPApp keyWindow] windowNumber],
-            modifierFlags = CPPlatformActionKeyMask;
-
-        event = [CPEvent keyEventWithType:CPKeyDown location:location modifierFlags:modifierFlags
+            modifierFlags = CPPlatformActionKeyMask,
+            location = _lastMouseEventLocation || CGPointMakeZero(),
+            event = [CPEvent keyEventWithType:CPKeyDown location:location modifierFlags:modifierFlags
                     timestamp:timestamp windowNumber:windowNumber context:nil
                     characters:characters charactersIgnoringModifiers:characters isARepeat:NO keyCode:keyCode];
 
@@ -980,6 +999,7 @@ var resizeTimer = nil;
         aDOMEvent = window.event;
 
     var location = nil;
+
     if (CPFeatureIsCompatible(CPJavaScriptMouseWheelValues_8_15))
     {
         var x = aDOMEvent._offsetX || 0.0,
@@ -998,12 +1018,12 @@ var resizeTimer = nil;
             } while (element = element.offsetParent);
         }
 
-        location = _CGPointMake((x + ((aDOMEvent.clientX - 8) / 15)), (y + ((aDOMEvent.clientY - 8) / 15)));
+        location = CGPointMake((x + ((aDOMEvent.clientX - 8) / 15)), (y + ((aDOMEvent.clientY - 8) / 15)));
     }
     else if (aDOMEvent._overrideLocation)
         location = aDOMEvent._overrideLocation;
     else
-        location = _CGPointMake(aDOMEvent.clientX, aDOMEvent.clientY);
+        location = CGPointMake(aDOMEvent.clientX, aDOMEvent.clientY);
 
     var deltaX = 0.0,
         deltaY = 0.0,
@@ -1040,7 +1060,7 @@ var resizeTimer = nil;
     {
         // Find the scroll delta
         var deltaX = _DOMScrollingElement.scrollLeft - 150,
-            deltaY = _DOMScrollingElement.scrollTop - 150;
+            deltaY = (_DOMScrollingElement.scrollTop - 150) || (aDOMEvent.deltaY === undefined ? 0 : aDOMEvent.deltaY);
 
         // If we scroll super with momentum,
         // there are so many events going off that
@@ -1177,7 +1197,6 @@ var resizeTimer = nil;
 {
     var type = _overriddenEventType || aDOMEvent.type;
 
-
     // IE's event order is down, up, up, dblclick, so we have create these events artificially.
     if (type === @"dblclick")
     {
@@ -1193,7 +1212,7 @@ var resizeTimer = nil;
     }
 
     var event,
-        location = _CGPointMake(aDOMEvent.clientX, aDOMEvent.clientY),
+        location = CGPointMake(aDOMEvent.clientX, aDOMEvent.clientY),
         timestamp = [CPEvent currentTimestamp],
         sourceElement = (aDOMEvent.target || aDOMEvent.srcElement),
         windowNumber = 0,
@@ -1208,7 +1227,7 @@ var resizeTimer = nil;
         windowNumber = [_mouseDownWindow windowNumber];
     else
     {
-        var theWindow = [self hitTest:location];
+        var theWindow = [self _mouseHitTest:location];
 
         if ((aDOMEvent.type === CPDOMEventMouseDown) && theWindow)
             _mouseDownWindow = theWindow;
@@ -1245,6 +1264,7 @@ var resizeTimer = nil;
         [_CPToolTip invalidateCurrentToolTipIfNeeded];
 
         var button = aDOMEvent.button;
+
         _mouseDownIsRightClick = button == 2 || (CPBrowserIsOperatingSystem(CPMacOperatingSystem) && button == 0 && modifierFlags & CPControlKeyMask);
 
         if (sourceElement.tagName === "INPUT" && sourceElement != _DOMFocusElement)
@@ -1258,7 +1278,7 @@ var resizeTimer = nil;
             _DOMEventMode = YES;
             _mouseIsDown = YES;
 
-            //fake a down and up event so that event tracking mode will work correctly
+            // Fake a down and up event so that event tracking mode will work correctly
             [CPApp sendEvent:[CPEvent mouseEventWithType:_mouseDownIsRightClick ? CPRightMouseDown : CPLeftMouseDown location:location modifierFlags:modifierFlags
                     timestamp:timestamp windowNumber:windowNumber context:nil eventNumber:-1
                     clickCount:CPDOMEventGetClickCount(_lastMouseDown, timestamp, location) pressure:0]];
@@ -1305,17 +1325,21 @@ var resizeTimer = nil;
     if (StopDOMEventPropagation && (!supportsNativeDragAndDrop || type !== "mousedown" && !isDragging))
         CPDOMEventStop(aDOMEvent, self);
 
-    // if there are any tracking event listeners then show the event guard so we don't lose events to iframes
-    // TODO Actually check for tracking event listeners, not just any listener but _CPRunModalLoop.
+    // If there are any tracking event listeners (listening for CPLeftMouseDraggedMask)
+    // then show the event guard so we don't lose events to iframes
     var hasTrackingEventListener = NO;
+
     for (var i = 0; i < CPApp._eventListeners.length; i++)
     {
-        if (CPApp._eventListeners[i]._callback !== _CPRunModalLoop)
+        var listener = CPApp._eventListeners[i];
+
+        if (listener._callback !== _CPRunModalLoop && (listener._mask & CPLeftMouseDraggedMask))
         {
             hasTrackingEventListener = YES;
             break;
         }
     }
+
     _lastMouseEventLocation = location;
 
     _DOMEventGuard.style.display = hasTrackingEventListener ? "" : "none";
@@ -1370,6 +1394,7 @@ var resizeTimer = nil;
         }
 
         var insertionIndex = 0;
+
         if (middle !== undefined)
             insertionIndex = _windowLevels[middle] > aLevel ? middle : middle + 1
 
@@ -1382,25 +1407,123 @@ var resizeTimer = nil;
     return layer;
 }
 
-- (void)order:(CPWindowOrderingMode)aPlace window:(CPWindow)aWindow relativeTo:(CPWindow)otherWindow
+- (void)order:(CPWindowOrderingMode)orderingMode window:(CPWindow)aWindow relativeTo:(CPWindow)otherWindow
 {
     [CPPlatform initializeScreenIfNecessary];
 
     // Grab the appropriate level for the layer, and create it if
     // necessary (if we are not simply removing the window).
-    var layer = [self layerAtLevel:[aWindow level] create:aPlace !== CPWindowOut];
+    var layer = [self layerAtLevel:[aWindow level] create:orderingMode !== CPWindowOut];
 
-    // Ignore otherWindow, simply remove this window from it's level.
+    // When ordering out, ignore otherWindow, simply remove aWindow from its level.
     // If layer is nil, this will be a no-op.
-    if (aPlace === CPWindowOut)
+    if (orderingMode === CPWindowOut)
         return [layer removeWindow:aWindow];
 
+    /*
+        If aWindow is a child of otherWindow and is not yet visible,
+        aWindow must actually be ordered relative to:
+
+        - otherWindow's last child which is not aWindow, or
+        - the furthest parent of aWindow
+
+        whichever is frontmost (orderingMode === CPWindowAbove) or rearmost
+        (orderingMode === CPWindowBelow).
+    */
+
+    if (![aWindow isVisible] && otherWindow && [aWindow parentWindow] === otherWindow)
+    {
+        var children = [otherWindow childWindows],
+            lastChild = [children lastObject];
+
+        if (lastChild === aWindow)
+        {
+            if ([children count] > 1)
+                otherWindow = [children objectAtIndex:[children count] - 2];
+        }
+        else if (lastChild)
+            otherWindow = lastChild;
+
+        var furthestParent = [self _furthestParentOf:otherWindow];
+
+        if ((orderingMode === CPWindowAbove && furthestParent._index > otherWindow._index) ||
+            (orderingMode === CPWindowBelow && furthestParent._index < otherWindow._index))
+            otherWindow = furthestParent;
+    }
+
+    /*
+        If a child window is ordered front, the furthest parent is actually
+        the one that is ordered front, and all of the descendent children
+        are ordered after it.
+    */
+    else if (orderingMode === CPWindowAbove && !otherWindow)
+        aWindow = [self _furthestParentOf:aWindow];
+
     var insertionIndex = CPNotFound;
+
     if (otherWindow)
-        insertionIndex = aPlace === CPWindowAbove ? otherWindow._index + 1 : otherWindow._index;
+        insertionIndex = orderingMode === CPWindowAbove ? otherWindow._index + 1 : otherWindow._index;
 
     // Place the window at the appropriate index.
     [layer insertWindow:aWindow atIndex:insertionIndex];
+
+    // If aWindow is a parent, recursively order all of its children after it
+    if ([[aWindow childWindows] count])
+        [self _orderChildWindowsOf:aWindow furthestParent:[self _furthestParentOf:aWindow] layer:layer];
+
+    [aWindow _setHasBeenOrderedIn:YES];
+}
+
+- (CPWindow)_furthestParentOf:(CPWindow)aWindow
+{
+    var parent;
+
+    while ((parent = [aWindow parentWindow]))
+        aWindow = parent;
+
+    return aWindow;
+}
+
+- (void)_orderChildWindowsOf:(CPWindow)aWindow furthestParent:(CPWindow)furthestParent layer:(CPDOMWindowLayer)aLayer
+{
+    // When a parent window is ordered, Cocoa orders its child windows
+    // relative to it or the furthest parent.
+    var children = [aWindow childWindows],
+        count = [children count],
+        parent = aWindow,
+        parentLevel = [parent level];
+
+    for (var i = 0; i < count; ++i)
+    {
+        var child = children[i],
+            childWasVisible = [child isVisible];
+
+        // If a child is not visible and has not yet been ordered in, skip it
+        if (!childWasVisible && ![child _hasBeenOrderedIn])
+            continue;
+
+        // If a user moved level of the child window, we should respect that
+        if ([child level] !== parentLevel)
+            continue;
+
+        var ordering = [child _childOrdering];
+
+        if ((ordering === CPWindowAbove && furthestParent._index > parent._index) ||
+            (ordering === CPWindowBelow && furthestParent._index < parent._index))
+            parent = furthestParent;
+
+        var index = ordering === CPWindowAbove ? parent._index + 1 : parent._index;
+
+        [aLayer insertWindow:child atIndex:index];
+
+        if (!childWasVisible)
+            [child _parentDidOrderInChild];
+
+        if ([[child childWindows] count])
+            [self _orderChildWindowsOf:child furthestParent:furthestParent layer:aLayer];
+
+        parent = child;
+    }
 }
 
 - (void)_removeLayers
@@ -1432,7 +1555,7 @@ var resizeTimer = nil;
 }
 
 /* @ignore */
-- (id)_dragHitTest:(CPPoint)aPoint pasteboard:(CPPasteboard)aPasteboard
+- (id)_dragHitTest:(CGPoint)aPoint pasteboard:(CPPasteboard)aPasteboard
 {
     var levels = _windowLevels,
         layers = _windowLayers,
@@ -1486,7 +1609,17 @@ var resizeTimer = nil;
     return StopContextMenuDOMEventPropagation;
 }
 
-- (CPWindow)hitTest:(CPPoint)location
+- (CPWindow)_mouseHitTest:(CGPoint)location
+{
+    return [self _hitTest:location withTest:@selector(_isValidMousePoint:)]
+}
+
+- (CPWindow)hitTest:(CGPoint)location
+{
+    return [self _hitTest:location withTest:@selector(containsPoint:)]
+}
+
+- (CPWindow)_hitTest:(CGPoint)location withTest:(SEL)aTest
 {
     if (self._only)
         return self._only;
@@ -1505,7 +1638,7 @@ var resizeTimer = nil;
         {
             var candidateWindow = windows[windowCount];
 
-            if (!candidateWindow._ignoresMouseEvents && [candidateWindow containsPoint:location])
+            if (!candidateWindow._ignoresMouseEvents && [candidateWindow performSelector:aTest withObject:location])
                 theWindow = candidateWindow;
         }
     }
@@ -1523,7 +1656,7 @@ var resizeTimer = nil;
 + (void)preventCharacterKeysFromPropagating:(CPArray)characters
 {
     for (var i = characters.length; i > 0; i--)
-        CharacterKeysToPrevent[""+characters[i-1].toLowerCase()] = YES;
+        CharacterKeysToPrevent["" + characters[i - 1].toLowerCase()] = YES;
 }
 
 /*!
@@ -1570,6 +1703,7 @@ var resizeTimer = nil;
 }
 
 @end
+#endif
 
 var CPEventClass = [CPEvent class];
 

@@ -20,18 +20,22 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#import "../Foundation/CPRange.h"
-
 @import <Foundation/CPCharacterSet.j>
 @import <Foundation/CPIndexSet.j>
 @import <Foundation/CPTimer.j>
 
-@import "CPButton.j"
-@import "CPScrollView.j"
-@import "CPTextField.j"
-@import "CPTableView.j"
-@import "CPWindow.j"
 @import "_CPAutocompleteMenu.j"
+@import "CPButton.j"
+@import "CPPopUpButton.j"
+@import "CPScrollView.j"
+@import "CPTableView.j"
+@import "CPText.j"
+@import "CPTextField.j"
+@import "CPWindow_Constants.j"
+
+@global CPApp
+@global CPTextFieldDidFocusNotification
+@global CPTextFieldDidBlurNotification
 
 #if PLATFORM(DOM)
 
@@ -47,13 +51,16 @@ var CPTokenFieldDOMInputElement = nil,
     CPTokenFieldCachedDragFunction = nil,
     CPTokenFieldFocusInput = NO,
 
-    CPTokenFieldBlurFunction = nil;
+    CPTokenFieldBlurHandler = nil;
 
 #endif
 
 var CPScrollDestinationNone             = 0,
     CPScrollDestinationLeft             = 1,
     CPScrollDestinationRight            = 2;
+
+CPTokenFieldDisclosureButtonType = 0;
+CPTokenFieldDeleteButtonType     = 1;
 
 @implementation CPTokenField : CPTextField
 {
@@ -71,8 +78,9 @@ var CPScrollDestinationNone             = 0,
 
     CPEvent             _mouseDownEvent;
 
-    BOOL                _preventResign;
     BOOL                _shouldNotifyTarget;
+
+    int                 _buttonType @accessors(property=buttonType);
 }
 
 + (CPCharacterSet)defaultTokenizingCharacterSet
@@ -92,15 +100,16 @@ var CPScrollDestinationNone             = 0,
 
 + (id)themeAttributes
 {
-    return [CPDictionary dictionaryWithObject:_CGInsetMakeZero() forKey:@"editor-inset"];
+    return @{ @"editor-inset": CGInsetMakeZero() };
 }
 
-- (id)initWithFrame:(CPRect)frame
+- (id)initWithFrame:(CGRect)frame
 {
     if (self = [super initWithFrame:frame])
     {
         _completionDelay = [[self class] defaultCompletionDelay];
         _tokenizingCharacterSet = [[self class] defaultTokenizingCharacterSet];
+        _buttonType = CPTokenFieldDisclosureButtonType;
         [self setBezeled:YES];
 
         [self _init];
@@ -115,7 +124,7 @@ var CPScrollDestinationNone             = 0,
 
 - (void)_init
 {
-    _selectedRange = _CPMakeRange(0, 0);
+    _selectedRange = CPMakeRange(0, 0);
 
     var frame = [self frame];
 
@@ -145,16 +154,16 @@ var CPScrollDestinationNone             = 0,
 
 - (void)_autocompleteWithEvent:(CPEvent)anEvent
 {
-    if (![self _inputElement].value && (![_autocompleteMenu contentArray] || ![self hasThemeState:CPThemeStateAutocompleting]))
+    if (![self _editorValue] && (![_autocompleteMenu contentArray] || ![self hasThemeState:CPThemeStateAutocompleting]))
         return;
 
     [self _hideCompletions];
 
     var token = [_autocompleteMenu selectedItem],
-        shouldRemoveLastObject = token !== @"" && [self _inputElement].value !== @"";
+        shouldRemoveLastObject = token !== @"" && [self _editorValue] !== @"";
 
     if (!token)
-        token = [self _inputElement].value;
+        token = [self _editorValue];
 
     // Make sure the user typed an actual token to prevent the previous token from being emptied
     // If the input area is empty, we want to fall back to the normal behavior, resigning first
@@ -205,7 +214,7 @@ var CPScrollDestinationNone             = 0,
 
     if (delegateApprovedObjectsCount)
         location += delegateApprovedObjectsCount;
-    _selectedRange = _CPMakeRange(location, 0);
+    _selectedRange = CPMakeRange(location, 0);
 
     [self _inputElement].value = @"";
     [self setNeedsLayout];
@@ -225,12 +234,12 @@ var CPScrollDestinationNone             = 0,
     if (indexOfToken == CPNotFound)
     {
         if (!extend)
-            _selectedRange = _CPMakeRange([[self _tokens] count], 0);
+            _selectedRange = CPMakeRange([[self _tokens] count], 0);
     }
     else if (extend)
-        _selectedRange = CPUnionRange(_selectedRange, _CPMakeRange(indexOfToken, 1));
+        _selectedRange = CPUnionRange(_selectedRange, CPMakeRange(indexOfToken, 1));
     else
-        _selectedRange = _CPMakeRange(indexOfToken, 1);
+        _selectedRange = CPMakeRange(indexOfToken, 1);
 
     [self setNeedsLayout];
 }
@@ -240,7 +249,7 @@ var CPScrollDestinationNone             = 0,
     var indexOfToken = [[self _tokens] indexOfObject:token];
 
     if (CPLocationInRange(indexOfToken, _selectedRange))
-        _selectedRange = _CPMakeRange(MAX(indexOfToken, _selectedRange.location), MIN(_selectedRange.length, indexOfToken - _selectedRange.location));
+        _selectedRange = CPMakeRange(MAX(indexOfToken, _selectedRange.location), MIN(_selectedRange.length, indexOfToken - _selectedRange.location));
 
     [self setNeedsLayout];
 }
@@ -293,7 +302,7 @@ var CPScrollDestinationNone             = 0,
     [self setObjectValue:tokens];
     // setObjectValue moves the cursor to the end of the selection. We want it to stay
     // where the selected tokens were.
-    _selectedRange = _CPMakeRange(collapsedSelection, 0);
+    _selectedRange = CPMakeRange(collapsedSelection, 0);
 
     [self _controlTextDidChange];
 }
@@ -320,14 +329,21 @@ var CPScrollDestinationNone             = 0,
     // As long as we are the first responder we need to monitor the key status of our window.
     [self _setObserveWindowKeyNotifications:YES];
 
+    [self scrollRectToVisible:[self bounds]];
+
     if ([[self window] isKeyWindow])
-        [self _becomeFirstKeyResponder];
+        return [self _becomeFirstKeyResponder];
 
     return YES;
 }
 
-- (void)_becomeFirstKeyResponder
+- (BOOL)_becomeFirstKeyResponder
 {
+    // If the token field is still not completely on screen, refuse to become
+    // first responder, because the browser will scroll it into view out of our control.
+    if (![self _isWithinUsablePlatformRect])
+        return NO;
+
     [self setThemeState:CPThemeStateEditing];
 
     [self _updatePlaceholderState];
@@ -347,11 +363,16 @@ var CPScrollDestinationNone             = 0,
 
     switch ([self alignment])
     {
-        case CPCenterTextAlignment: element.style.textAlign = "center";
-                                    break;
-        case CPRightTextAlignment:  element.style.textAlign = "right";
-                                    break;
-        default:                    element.style.textAlign = "left";
+        case CPCenterTextAlignment:
+            element.style.textAlign = "center";
+            break;
+
+        case CPRightTextAlignment:
+            element.style.textAlign = "right";
+            break;
+
+        default:
+            element.style.textAlign = "left";
     }
 
     var contentRect = [self contentRectForBounds:[self bounds]];
@@ -361,16 +382,21 @@ var CPScrollDestinationNone             = 0,
     element.style.width = CGRectGetWidth(contentRect) + "px";
     element.style.height = [font defaultLineHeightForFont] + "px";
 
-    [_tokenScrollView documentView]._DOMElement.appendChild(element);
-
     window.setTimeout(function()
     {
-        element.focus();
-        CPTokenFieldInputOwner = self;
-    }, 0.0);
+        [_tokenScrollView documentView]._DOMElement.appendChild(element);
 
-    //post CPControlTextDidBeginEditingNotification
-    [self textDidBeginEditing:[CPNotification notificationWithName:CPControlTextDidBeginEditingNotification object:self userInfo:nil]];
+        //post CPControlTextDidBeginEditingNotification
+        [self textDidBeginEditing:[CPNotification notificationWithName:CPControlTextDidBeginEditingNotification object:self userInfo:nil]];
+
+        window.setTimeout(function()
+        {
+            element.focus();
+            CPTokenFieldInputOwner = self;
+        }, 0.0);
+
+        [self textDidFocus:[CPNotification notificationWithName:CPTextFieldDidFocusNotification object:self userInfo:nil]];
+    }, 0.0);
 
     [[[self window] platformWindow] _propagateCurrentDOMEvent:YES];
 
@@ -386,13 +412,12 @@ var CPScrollDestinationNone             = 0,
     }
 
 #endif
+
+    return YES;
 }
 
 - (BOOL)resignFirstResponder
 {
-    if (_preventResign)
-        return NO;
-
     [self _autocomplete];
 
     // From CPTextField superclass.
@@ -408,6 +433,8 @@ var CPScrollDestinationNone             = 0,
         if ([self sendsActionOnEndEditing])
             [self sendAction:[self action] to:[self target]];
     }
+
+    [self textDidBlur:[CPNotification notificationWithName:CPTextFieldDidBlurNotification object:self userInfo:nil]];
 
     return YES;
 }
@@ -427,7 +454,7 @@ var CPScrollDestinationNone             = 0,
     element.blur();
 
     if (!CPTokenFieldInputDidBlur)
-        CPTokenFieldBlurFunction();
+        CPTokenFieldBlurHandler();
 
     CPTokenFieldInputDidBlur = NO;
     CPTokenFieldInputResigning = NO;
@@ -451,7 +478,6 @@ var CPScrollDestinationNone             = 0,
 
 - (void)mouseDown:(CPEvent)anEvent
 {
-    _preventResign = YES;
     _mouseDownEvent = anEvent;
 
     [self _selectToken:nil byExtendingSelection:NO];
@@ -461,27 +487,23 @@ var CPScrollDestinationNone             = 0,
 
 - (void)mouseUp:(CPEvent)anEvent
 {
-    _preventResign = NO;
     _mouseDownEvent = nil;
 }
 
 - (void)_mouseDownOnToken:(_CPTokenFieldToken)aToken withEvent:(CPEvent)anEvent
 {
-    _preventResign = YES;
     _mouseDownEvent = anEvent;
 }
 
 - (void)_mouseUpOnToken:(_CPTokenFieldToken)aToken withEvent:(CPEvent)anEvent
 {
-    if (_mouseDownEvent && _CGPointEqualToPoint([_mouseDownEvent locationInWindow], [anEvent locationInWindow]))
+    if (_mouseDownEvent && CGPointEqualToPoint([_mouseDownEvent locationInWindow], [anEvent locationInWindow]))
     {
         [self _selectToken:aToken byExtendingSelection:[anEvent modifierFlags] & CPShiftKeyMask];
         [[self window] makeFirstResponder:self];
         // Snap to the token if it's only half visible due to mouse wheel scrolling.
         _shouldScrollTo = aToken;
     }
-
-    _preventResign = NO;
 }
 
 // ===========
@@ -515,9 +537,9 @@ var CPScrollDestinationNone             = 0,
 
 #if PLATFORM(DOM)
 
-    if ([self _inputElement].value != @"")
+    if ([self _editorValue])
     {
-        var token = [self _representedObjectForEditingString:[self _inputElement].value];
+        var token = [self _representedObjectForEditingString:[self _editorValue]];
         [objectValue insertObject:token atIndex:_selectedRange.location];
     }
 
@@ -566,10 +588,11 @@ var CPScrollDestinationNone             = 0,
 
             if (newToken === nil)
             {
-                newToken = [[_CPTokenFieldToken alloc] init];
+                newToken = [_CPTokenFieldToken new];
                 [newToken setTokenField:self];
                 [newToken setRepresentedObject:tokenObject];
                 [newToken setStringValue:tokenValue];
+                [newToken setEditable:[self isEditable]];
                 [contentView addSubview:newToken];
             }
 
@@ -615,6 +638,13 @@ var CPScrollDestinationNone             = 0,
     }
 }
 
+- (void)setEditable:(BOOL)shouldBeEditable
+{
+    [super setEditable:shouldBeEditable];
+
+    [[self _tokens] makeObjectsPerformSelector:@selector(setEditable:) withObject:shouldBeEditable];
+}
+
 - (void)sendAction:(SEL)anAction to:(id)anObject
 {
     _shouldNotifyTarget = NO;
@@ -644,38 +674,19 @@ var CPScrollDestinationNone             = 0,
         CPTokenFieldDOMInputElement.style.background = "transparent";
         CPTokenFieldDOMInputElement.style.outline = "none";
 
-        CPTokenFieldBlurFunction = function(anEvent)
+        CPTokenFieldBlurHandler = function(anEvent)
         {
-            if (CPTokenFieldInputOwner && [CPTokenFieldInputOwner._tokenScrollView documentView]._DOMElement != CPTokenFieldDOMInputElement.parentNode)
-                return;
-
-            if (CPTokenFieldInputOwner && CPTokenFieldInputOwner._preventResign)
-                return false;
-
-            if (!CPTokenFieldInputResigning && [[CPTokenFieldInputOwner window] isKeyWindow])
-            {
-                // If we lost focus somehow but we're not resigning and we're still in the key window, we'll need to take it back.
-                window.setTimeout(function()
-                {
-                    CPTokenFieldDOMInputElement.focus();
-                }, 0.0);
-            }
-
-            CPTokenFieldHandleBlur(anEvent, CPTokenFieldDOMInputElement);
-            CPTokenFieldInputDidBlur = YES;
-
-            return true;
+            return CPTextFieldBlurFunction(
+                        anEvent,
+                        CPTokenFieldInputOwner,
+                        CPTokenFieldInputOwner ? [CPTokenFieldInputOwner._tokenScrollView documentView]._DOMElement : nil,
+                        CPTokenFieldDOMInputElement,
+                        CPTokenFieldInputResigning,
+                        @ref(CPTokenFieldInputDidBlur));
         };
 
-        CPTokenFieldHandleBlur = function(anEvent)
-        {
-            CPTokenFieldInputOwner = nil;
-
-            [[CPRunLoop currentRunLoop] limitDateForMode:CPDefaultRunLoopMode];
-        };
-
-        //FIXME make this not onblur
-        CPTokenFieldDOMInputElement.onblur = CPTokenFieldBlurFunction;
+        // FIXME make this not onblur
+        CPTokenFieldDOMInputElement.onblur = CPTokenFieldBlurHandler;
 
         CPTokenFieldDOMStandardInputElement = CPTokenFieldDOMInputElement;
     }
@@ -693,6 +704,13 @@ var CPScrollDestinationNone             = 0,
     return CPTokenFieldDOMInputElement;
 }
 #endif
+
+- (CPString)_editorValue
+{
+    if (![self hasThemeState:CPThemeStateEditing])
+        return @"";
+    return [self _inputElement].value;
+}
 
 - (void)moveUp:(id)sender
 {
@@ -773,7 +791,7 @@ var CPScrollDestinationNone             = 0,
 - (void)moveLeft:(id)sender
 {
     // Left arrow
-    if ((_selectedRange.location > 0 || _selectedRange.length) && CPTokenFieldDOMInputElement.value == "")
+    if ((_selectedRange.location > 0 || _selectedRange.length) && [self _editorValue] == "")
     {
         if (_selectedRange.length)
             // Simply collapse the range.
@@ -792,7 +810,7 @@ var CPScrollDestinationNone             = 0,
 
 - (void)moveLeftAndModifySelection:(id)sender
 {
-    if (_selectedRange.location > 0 && CPTokenFieldDOMInputElement.value == "")
+    if (_selectedRange.location > 0 && [self _editorValue] == "")
     {
         _selectedRange.location--;
         // When shift is depressed, select the next token backwards.
@@ -810,12 +828,12 @@ var CPScrollDestinationNone             = 0,
 - (void)moveRight:(id)sender
 {
     // Right arrow
-    if ((_selectedRange.location < [[self _tokens] count] || _selectedRange.length) && CPTokenFieldDOMInputElement.value == "")
+    if ((_selectedRange.location < [[self _tokens] count] || _selectedRange.length) && [self _editorValue] == "")
     {
         if (_selectedRange.length)
         {
             // Place the cursor at the end of the selection and collapse.
-            _selectedRange.location = _CPMaxRange(_selectedRange);
+            _selectedRange.location = CPMaxRange(_selectedRange);
             _selectedRange.length = 0;
         }
         else
@@ -836,7 +854,7 @@ var CPScrollDestinationNone             = 0,
 
 - (void)moveRightAndModifySelection:(id)sender
 {
-    if (_CPMaxRange(_selectedRange) < [[self _tokens] count] && CPTokenFieldDOMInputElement.value == "")
+    if (CPMaxRange(_selectedRange) < [[self _tokens] count] && [self _editorValue] == "")
     {
         // Leave the selection location in place but include the next token to the right.
         _selectedRange.length++;
@@ -854,7 +872,7 @@ var CPScrollDestinationNone             = 0,
 {
     // TODO Even if the editor isn't empty you should be able to delete the previous token by placing the cursor
     // at the beginning of the editor.
-    if (CPTokenFieldDOMInputElement.value == @"")
+    if ([self _editorValue] == @"")
     {
         [self _hideCompletions];
 
@@ -880,7 +898,7 @@ var CPScrollDestinationNone             = 0,
 {
     // TODO Even if the editor isn't empty you should be able to delete the next token by placing the cursor
     // at the end of the editor.
-    if (CPTokenFieldDOMInputElement.value == @"")
+    if ([self _editorValue] == @"")
     {
         // Delete forward if nothing is selected, else delete all selected.
         [self _hideCompletions];
@@ -915,7 +933,7 @@ var CPScrollDestinationNone             = 0,
 
         // Finish any editing.
         [self _autocomplete];
-        _selectedRange = _CPMakeRange(0, [[self _tokens] count]);
+        _selectedRange = CPMakeRange(0, [[self _tokens] count]);
 
         [self setNeedsLayout];
     }
@@ -923,7 +941,9 @@ var CPScrollDestinationNone             = 0,
 
 - (void)keyDown:(CPEvent)anEvent
 {
+#if PLATFORM(DOM)
     CPTokenFieldTextDidChangeValue = [self stringValue];
+#endif
 
     // Leave the default _propagateCurrentDOMEvent setting in place. This might be YES or NO depending
     // on if something that could be a browser shortcut was pressed or not, such as Cmd-R to reload.
@@ -933,14 +953,16 @@ var CPScrollDestinationNone             = 0,
     [self interpretKeyEvents:[anEvent]];
 
     [[CPRunLoop currentRunLoop] limitDateForMode:CPDefaultRunLoopMode];
-}}
+}
 
 - (void)keyUp:(CPEvent)anEvent
 {
+#if PLATFORM(DOM)
     if ([self stringValue] !== CPTokenFieldTextDidChangeValue)
     {
         [self textDidChange:[CPNotification notificationWithName:CPControlTextDidChangeNotification object:self userInfo:nil]];
     }
+#endif
 
     [[[self window] platformWindow] _propagateCurrentDOMEvent:YES];
 }
@@ -1003,11 +1025,11 @@ var CPScrollDestinationNone             = 0,
         return;
 
     // Move each token into the right position.
-    var contentRect = _CGRectMakeCopy([contentView bounds]),
+    var contentRect = CGRectMakeCopy([contentView bounds]),
         contentOrigin = contentRect.origin,
         contentSize = contentRect.size,
-        offset = CPPointMake(contentOrigin.x, contentOrigin.y),
-        spaceBetweenTokens = CPSizeMake(2.0, 2.0),
+        offset = CGPointMake(contentOrigin.x, contentOrigin.y),
+        spaceBetweenTokens = CGSizeMake(2.0, 2.0),
         isEditing = [[self window] firstResponder] == self,
         tokenToken = [_CPTokenFieldToken new],
         font = [self currentValueForThemeAttribute:@"font"],
@@ -1020,11 +1042,11 @@ var CPScrollDestinationNone             = 0,
     // Get the height of a typical token, or a token token if you will.
     [tokenToken sizeToFit];
 
-    var tokenHeight = _CGRectGetHeight([tokenToken bounds]);
+    var tokenHeight = CGRectGetHeight([tokenToken bounds]);
 
     var fitAndFrame = function(width, height)
     {
-        var r = _CGRectMake(0, 0, width, height);
+        var r = CGRectMake(0, 0, width, height);
 
         if (offset.x + width >= contentSize.width && offset.x > contentOrigin.x)
         {
@@ -1037,8 +1059,8 @@ var CPScrollDestinationNone             = 0,
 
         // Make sure the frame fits.
         var scrollHeight = offset.y + tokenHeight + CEIL(spaceBetweenTokens.height / 2.0);
-        if (_CGRectGetHeight([contentView bounds]) < scrollHeight)
-            [contentView setFrameSize:_CGSizeMake(_CGRectGetWidth([_tokenScrollView bounds]), scrollHeight)];
+        if (CGRectGetHeight([contentView bounds]) < scrollHeight)
+            [contentView setFrameSize:CGSizeMake(CGRectGetWidth([_tokenScrollView bounds]), scrollHeight)];
 
         offset.x += width + spaceBetweenTokens.width;
 
@@ -1072,12 +1094,12 @@ var CPScrollDestinationNone             = 0,
 
         // When editing, always scroll to the cursor.
         if (_selectedRange.length == 0)
-            [[_tokenScrollView documentView] scrollPoint:_CGPointMake(0, _inputFrame.origin.y)];
+            [[_tokenScrollView documentView] scrollPoint:CGPointMake(0, _inputFrame.origin.y)];
     };
 
     for (var i = 0, count = [tokens count]; i < count; i++)
     {
-        if (isEditing && !_selectedRange.length && i == _CPMaxRange(_selectedRange))
+        if (isEditing && !_selectedRange.length && i == CPMaxRange(_selectedRange))
             placeEditor(false);
 
         var tokenView = [tokens objectAtIndex:i];
@@ -1094,9 +1116,11 @@ var CPScrollDestinationNone             = 0,
             tokenFrame = fitAndFrame(tokenViewSize.width, tokenViewSize.height);
 
         [tokenView setFrame:tokenFrame];
+
+        [tokenView setButtonType:_buttonType];
     }
 
-    if (isEditing && !_selectedRange.length && _CPMaxRange(_selectedRange) >= [tokens count])
+    if (isEditing && !_selectedRange.length && CPMaxRange(_selectedRange) >= [tokens count])
         placeEditor(true);
 
     // Hide the editor if there are selected tokens, but still keep it active
@@ -1117,8 +1141,8 @@ var CPScrollDestinationNone             = 0,
 
     // Trim off any excess height downwards (in case we shrank).
     var scrollHeight = offset.y + tokenHeight;
-    if (_CGRectGetHeight([contentView bounds]) > scrollHeight)
-        [contentView setFrameSize:_CGSizeMake(_CGRectGetWidth([_tokenScrollView bounds]), scrollHeight)];
+    if (CGRectGetHeight([contentView bounds]) > scrollHeight)
+        [contentView setFrameSize:CGSizeMake(CGRectGetWidth([_tokenScrollView bounds]), scrollHeight)];
 
     if (_shouldScrollTo !== CPScrollDestinationNone)
     {
@@ -1130,7 +1154,7 @@ var CPScrollDestinationNone             = 0,
             if (scrollToToken === CPScrollDestinationLeft)
                 scrollToToken = tokens[_selectedRange.location]
             else if (scrollToToken === CPScrollDestinationRight)
-                scrollToToken = tokens[MAX(0, _CPMaxRange(_selectedRange) - 1)];
+                scrollToToken = tokens[MAX(0, CPMaxRange(_selectedRange) - 1)];
             [self _scrollTokenViewToVisible:scrollToToken];
         }
 
@@ -1143,7 +1167,7 @@ var CPScrollDestinationNone             = 0,
     if (!aToken)
         return;
 
-    return [[_tokenScrollView documentView] scrollPoint:_CGPointMake(0, [aToken frameOrigin].y)];
+    return [[_tokenScrollView documentView] scrollPoint:CGPointMake(0, [aToken frameOrigin].y)];
 }
 
 @end
@@ -1175,7 +1199,7 @@ var CPScrollDestinationNone             = 0,
 - (CGPoint)_completionOrigin:(_CPAutocompleteMenu)anAutocompleteMenu
 {
     var relativeFrame = _inputFrame ? [[_tokenScrollView documentView] convertRect:_inputFrame toView:self ] : [self bounds];
-    return _CGPointMake(_CGRectGetMinX(relativeFrame), _CGRectGetMaxY(relativeFrame));
+    return CGPointMake(CGRectGetMinX(relativeFrame), CGRectGetMaxY(relativeFrame));
 }
 
 /*!
@@ -1246,6 +1270,30 @@ var CPScrollDestinationNone             = 0,
     return aString;
 }
 
+- (BOOL)_hasMenuForRepresentedObject:(id)aRepresentedObject
+{
+    var delegate = [self delegate];
+    if ([delegate respondsToSelector:@selector(tokenField:hasMenuForRepresentedObject:)] &&
+        [delegate respondsToSelector:@selector(tokenField:menuForRepresentedObject:)])
+        return [delegate tokenField:self hasMenuForRepresentedObject:aRepresentedObject];
+
+    return NO;
+}
+
+- (CPMenu)_menuForRepresentedObject:(id)aRepresentedObject
+{
+    var delegate = [self delegate];
+    if ([delegate respondsToSelector:@selector(tokenField:hasMenuForRepresentedObject:)] &&
+        [delegate respondsToSelector:@selector(tokenField:menuForRepresentedObject:)])
+    {
+        var hasMenu = [delegate tokenField:self hasMenuForRepresentedObject:aRepresentedObject];
+        if (hasMenu)
+            return [delegate tokenField:self menuForRepresentedObject:aRepresentedObject] || nil;
+    }
+
+    return nil;
+}
+
 // We put the string on the pasteboard before calling this delegate method.
 // By default, we write the NSStringPboardType as well as an array of NSStrings.
 // - (BOOL)tokenField:(NSTokenField *)tokenField writeRepresentedObjects:(NSArray *)objects toPasteboard:(NSPasteboard *)pboard;
@@ -1270,13 +1318,25 @@ var CPScrollDestinationNone             = 0,
     [_autocompleteMenu _hideCompletions];
 }
 
+
+- (void)setButtonType:(int)aButtonType
+{
+    if (_buttonType === aButtonType)
+        return;
+
+    _buttonType = aButtonType;
+    [self setNeedsLayout];
+}
+
 @end
 
 @implementation _CPTokenFieldToken : CPTextField
 {
-    _CPTokenFieldTokenCloseButton   _deleteButton;
-    CPTokenField                    _tokenField;
-    id                              _representedObject;
+    _CPTokenFieldTokenCloseButton       _deleteButton;
+    _CPTokenFieldTokenDisclosureButton  _disclosureButton;
+    CPTokenField                        _tokenField;
+    id                                  _representedObject;
+    int                                 _buttonType;
 }
 
 + (CPString)defaultThemeClass
@@ -1284,16 +1344,19 @@ var CPScrollDestinationNone             = 0,
     return "tokenfield-token";
 }
 
-- (id)initWithFrame:(CPRect)frame
+- (BOOL)acceptsFirstResponder
+{
+    return NO;
+}
+
+- (id)initWithFrame:(CGRect)frame
 {
     if (self = [super initWithFrame:frame])
     {
-        _deleteButton = [[_CPTokenFieldTokenCloseButton alloc] initWithFrame:CPRectMakeZero()];
-        [self addSubview:_deleteButton];
-
         [self setEditable:NO];
         [self setHighlighted:NO];
         [self setBezeled:YES];
+        [self setButtonType:CPTokenFieldDisclosureButtonType];
     }
 
     return self;
@@ -1317,11 +1380,46 @@ var CPScrollDestinationNone             = 0,
 - (void)setRepresentedObject:(id)representedObject
 {
     _representedObject = representedObject;
+    [self setNeedsLayout];
+}
+
+- (void)setEditable:(BOOL)shouldBeEditable
+{
+    [super setEditable:shouldBeEditable];
+    [self setNeedsLayout];
+}
+
+- (BOOL)setThemeState:(CPThemeState)aState
+{
+    var r = [super setThemeState:aState];
+
+    // Share hover state with the disclosure and delete buttons.
+    if (aState & CPThemeStateHovered)
+    {
+        [_disclosureButton setThemeState:CPThemeStateHovered];
+        [_deleteButton setThemeState:CPThemeStateHovered];
+    }
+
+    return r;
+}
+
+- (BOOL)unsetThemeState:(CPThemeState)aState
+{
+    var r = [super unsetThemeState:aState];
+
+    // Share hover state with the disclosure and delete button.
+    if (aState & CPThemeStateHovered)
+    {
+        [_disclosureButton unsetThemeState:CPThemeStateHovered];
+        [_deleteButton unsetThemeState:CPThemeStateHovered];
+    }
+
+    return r;
 }
 
 - (CGSize)_minimumFrameSize
 {
-    var size = _CGSizeMakeZero(),
+    var size = CGSizeMakeZero(),
         minSize = [self currentValueForThemeAttribute:@"min-size"],
         contentInset = [self currentValueForThemeAttribute:@"content-inset"];
 
@@ -1332,6 +1430,47 @@ var CPScrollDestinationNone             = 0,
     return size;
 }
 
+- (void)setButtonType:(int)aButtonType
+{
+    if (_buttonType === aButtonType)
+        return;
+
+    _buttonType = aButtonType;
+
+    if (_buttonType === CPTokenFieldDisclosureButtonType)
+    {
+        if (_deleteButton)
+        {
+            [_deleteButton removeFromSuperview];
+            _deleteButton = nil;
+        }
+
+        if (!_disclosureButton)
+        {
+            _disclosureButton = [[_CPTokenFieldTokenDisclosureButton alloc] initWithFrame:CGRectMakeZero()];
+            [self addSubview:_disclosureButton];
+        }
+    }
+    else
+    {
+        if (_disclosureButton)
+        {
+            [_disclosureButton removeFromSuperview];
+            _disclosureButton = nil;
+        }
+
+        if (!_deleteButton)
+        {
+            _deleteButton = [[_CPTokenFieldTokenCloseButton alloc] initWithFrame:CGRectMakeZero()];
+            [self addSubview:_deleteButton];
+            [_deleteButton setTarget:self];
+            [_deleteButton setAction:@selector(_delete:)];
+        }
+    }
+
+    [self setNeedsLayout];
+}
+
 - (void)layoutSubviews
 {
     [super layoutSubviews];
@@ -1340,16 +1479,33 @@ var CPScrollDestinationNone             = 0,
                                            positioned:CPWindowBelow
                       relativeToEphemeralSubviewNamed:@"content-view"];
 
-    if (bezelView)
+    if (bezelView && _tokenField)
     {
-        [_deleteButton setTarget:self];
-        [_deleteButton setAction:@selector(_delete:)];
+        switch (_buttonType)
+        {
+            case CPTokenFieldDisclosureButtonType:
+                var shouldBeEnabled = [self hasMenu];
+                [_disclosureButton setHidden:!shouldBeEnabled];
 
-        var frame = [bezelView frame],
-            buttonOffset = [_deleteButton currentValueForThemeAttribute:@"offset"],
-            buttonSize = [_deleteButton currentValueForThemeAttribute:@"min-size"];
+                if (shouldBeEnabled)
+                    [_disclosureButton setMenu:[self menu]];
 
-        [_deleteButton setFrame:_CGRectMake(CPRectGetMaxX(frame) - buttonOffset.x, CPRectGetMinY(frame) + buttonOffset.y, buttonSize.width, buttonSize.height)];
+                var frame = [bezelView frame],
+                    buttonOffset = [_disclosureButton currentValueForThemeAttribute:@"offset"],
+                    buttonSize = [_disclosureButton currentValueForThemeAttribute:@"min-size"];
+
+                [_disclosureButton setFrame:CGRectMake(CGRectGetMaxX(frame) - buttonOffset.x, CGRectGetMinY(frame) + buttonOffset.y, buttonSize.width, buttonSize.height)];
+                break;
+            case CPTokenFieldDeleteButtonType:
+                [_deleteButton setEnabled:[self isEditable] && [self isEnabled]];
+
+                var frame = [bezelView frame],
+                    buttonOffset = [_deleteButton currentValueForThemeAttribute:@"offset"],
+                    buttonSize = [_deleteButton currentValueForThemeAttribute:@"min-size"];
+
+                [_deleteButton setFrame:CGRectMake(CGRectGetMaxX(frame) - buttonOffset.x, CGRectGetMinY(frame) + buttonOffset.y, buttonSize.width, buttonSize.height)];
+                break;
+        }
     }
 }
 
@@ -1365,14 +1521,22 @@ var CPScrollDestinationNone             = 0,
 
 - (void)_delete:(id)sender
 {
-    [_tokenField _deleteToken:self];
+    if ([self isEditable])
+        [_tokenField _deleteToken:self];
+}
+
+- (BOOL)hasMenu
+{
+    return [_tokenField _hasMenuForRepresentedObject:_representedObject];
+}
+
+- (CPMenu)menu
+{
+    return [_tokenField _menuForRepresentedObject:_representedObject];
 }
 
 @end
 
-/*
-    Theming hook.
-*/
 @implementation _CPTokenFieldTokenCloseButton : CPButton
 {
 }
@@ -1381,7 +1545,7 @@ var CPScrollDestinationNone             = 0,
 {
     var attributes = [CPButton themeAttributes];
 
-    [attributes setObject:_CGPointMake(15, 5) forKey:@"offset"];
+    [attributes setObject:CGPointMake(15, 5) forKey:@"offset"];
 
     return attributes;
 }
@@ -1391,11 +1555,73 @@ var CPScrollDestinationNone             = 0,
     return "tokenfield-token-close-button";
 }
 
+- (void)mouseEntered:(CPEvent)anEvent
+{
+    // Don't toggle hover state from within the button - we use the hover state of the token field as a whole.
+}
+
+- (void)mouseExited:(CPEvent)anEvent
+{
+    // Don't toggle hover state from within the button - we use the hover state of the token field as a whole.
+}
+
+@end
+
+@implementation _CPTokenFieldTokenDisclosureButton : CPPopUpButton
+{
+}
+
++ (id)themeAttributes
+{
+    var attributes = [CPButton themeAttributes];
+
+    [attributes setObject:CGPointMake(15, 5) forKey:@"offset"];
+
+    return attributes;
+}
+
++ (CPString)defaultThemeClass
+{
+    return "tokenfield-token-disclosure-button";
+}
+
+- (id)initWithFrame:(CGRect)aFrame
+{
+    if (self = [self initWithFrame:aFrame pullsDown:YES])
+    {
+        [self setBordered:YES];
+        [super setTitle:@""];
+    }
+
+    return self;
+}
+
+- (void)setTitle:(CPString)aTitle
+{
+    // skip
+}
+
+- (void)synchronizeTitleAndSelectedItem
+{
+    // skip
+}
+
+- (void)mouseEntered:(CPEvent)anEvent
+{
+    // Don't toggle hover state from within the button - we use the hover state of the token field as a whole.
+}
+
+- (void)mouseExited:(CPEvent)anEvent
+{
+    // Don't toggle hover state from within the button - we use the hover state of the token field as a whole.
+}
+
 @end
 
 
 var CPTokenFieldTokenizingCharacterSetKey   = "CPTokenFieldTokenizingCharacterSetKey",
-    CPTokenFieldCompletionDelayKey          = "CPTokenFieldCompletionDelay";
+    CPTokenFieldCompletionDelayKey          = "CPTokenFieldCompletionDelay",
+    CPTokenFieldButtonTypeKey               = "CPTokenFieldButtonTypeKey";
 
 @implementation CPTokenField (CPCoding)
 
@@ -1407,6 +1633,7 @@ var CPTokenFieldTokenizingCharacterSetKey   = "CPTokenFieldTokenizingCharacterSe
     {
         _tokenizingCharacterSet = [aCoder decodeObjectForKey:CPTokenFieldTokenizingCharacterSetKey] || [[self class] defaultTokenizingCharacterSet];
         _completionDelay = [aCoder decodeDoubleForKey:CPTokenFieldCompletionDelayKey] || [[self class] defaultCompletionDelay];
+        _buttonType = [aCoder decodeIntForKey:CPTokenFieldButtonTypeKey] || CPTokenFieldDisclosureButtonType;
 
         [self _init];
 
@@ -1423,6 +1650,7 @@ var CPTokenFieldTokenizingCharacterSetKey   = "CPTokenFieldTokenizingCharacterSe
 
     [aCoder encodeInt:_tokenizingCharacterSet forKey:CPTokenFieldTokenizingCharacterSetKey];
     [aCoder encodeDouble:_completionDelay forKey:CPTokenFieldCompletionDelayKey];
+    [aCoder encodeInt:_buttonType forKey:CPTokenFieldButtonTypeKey];
 }
 
 @end
